@@ -1,0 +1,9 @@
+*.map
+*.xs
+*.xe674
+*.xer4f
+*.bin
+mmw_configPkg*
+obj_*
+release/*
+*.tar
