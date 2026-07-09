@@ -138,8 +138,11 @@ static int32_t tmpInitCfg() {
     ctrlCfg.u.frameCfg.frameCfg.numLoops           = 128;
     ctrlCfg.u.frameCfg.frameCfg.numFrames          = 0;
     // TEMP for SYNC_OUT scope bring-up: lengthened from 125.0 (8Hz) to give more time
-    // to arm the scope after sensorStart. Revert to 125.0 before real use.
-    ctrlCfg.u.frameCfg.frameCfg.framePeriodicity   = (uint32_t)(2000.0 * 1000000 / 5);
+    // to arm the scope after sensorStart. 2000.0 exceeded the mmWaveLink spec's 1000ms
+    // max frame periodicity (caused MMWave_config to fail with MMWAVE_EFRAMECFG /
+    // subsysErrorCode 79) -- 500.0 matches sync.py's own documented bring-up default.
+    // Revert to 125.0 before real use.
+    ctrlCfg.u.frameCfg.frameCfg.framePeriodicity   = (uint32_t)(500.0 * 1000000 / 5);
     ctrlCfg.u.frameCfg.frameCfg.triggerSelect      = 1;  // software trigger
     ctrlCfg.u.frameCfg.frameCfg.frameTriggerDelay  = (uint32_t)(0.0 * 1000000 / 5);
 
