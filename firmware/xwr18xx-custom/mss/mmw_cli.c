@@ -243,6 +243,7 @@ static int32_t MmwDemo_CLISensorStart (int32_t argc, char* argv[])
                       sizeof(MmwDemo_LvdsStreamCfg), -1); // -1= all subframes
 
     retVal = tmpInitCfg();
+    MmwDemo_CLI_write("tmpInitCfg: retVal=%d\r\n", retVal);
     if (retVal != 0) { return retVal; }
 
     /***********************************************************************************
@@ -272,6 +273,7 @@ static int32_t MmwDemo_CLISensorStart (int32_t argc, char* argv[])
     memcpy(&gMmwMssMCB.cfg.openCfg, &openCfg, sizeof(MMWave_OpenCfg));
     /* call sensor open */
     retVal = MmwDemo_openSensor(true);
+    MmwDemo_CLI_write("openSensor: retVal=%d\r\n", retVal);
     if(retVal != 0) { return -1; }
     gMmwMssMCB.sensorState = MmwDemo_SensorState_OPENED;
 
@@ -282,9 +284,11 @@ static int32_t MmwDemo_CLISensorStart (int32_t argc, char* argv[])
     /* call sensor config */
     memcpy(&gMmwMssMCB.cfg.ctrlCfg, &ctrlCfg, sizeof(MMWave_CtrlCfg));
     retVal = MmwDemo_configSensor();
+    MmwDemo_CLI_write("configSensor: retVal=%d\r\n", retVal);
     if(retVal != 0) { return -1; }
 
     retVal = MmwDemo_startSensor();
+    MmwDemo_CLI_write("startSensor: retVal=%d\r\n", retVal);
     if(retVal != 0) { return -1; }
 
     /***********************************************************************************
@@ -315,6 +319,7 @@ void MmwDemo_CLIInit (uint8_t taskPriority)
     }
 
     /* Manually start the sensor since we are not using CLI */
+    MmwDemo_CLI_write("CLIInit: auto-starting sensor...\r\n");
     MmwDemo_CLISensorStart(0, NULL);
     return;
 }
