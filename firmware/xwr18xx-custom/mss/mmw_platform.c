@@ -24,18 +24,22 @@
  * @brief
  *  Global Variable for LDO BYPASS config
  **********************************************************
- * AS PER RECOMMENDATION FROM THE xWR1843BOOST EVM User guide
+ * AS PER RECOMMENDATION FROM THE xWR1843AOP EVM User guide
  **********************************************************
- *  set LDO bypass since the board has 1.0V RF supply 1
- *  and 1.0V RF supply 2. Please update this API if this
+ *  The AOP EVM uses on-board LDOs for the RF supply (unlike
+ *  the BOOST EVM, which has external 1.0V RF supply 1/2 rails
+ *  to bypass), so LDO bypass must stay disabled here. Sending
+ *  the BOOST EVM's bypass config (ldoBypassEnable=3) to an AOP
+ *  EVM makes rlRfSetLdoBypassConfig fail, which aborts sensor
+ *  open before it can start. Please update this API if this
  *  assumption is not valid else it may DAMAGE your board!
  **********************************************************
  **********************************************************
  */
 rlRfLdoBypassCfg_t gRFLdoBypassCfg =
 {
-    .ldoBypassEnable   = 3, /* 1.0V RF supply 1 and 1.0V RF supply 2 */
-    .supplyMonIrDrop   = 1, /* IR drop of 3% */
+    .ldoBypassEnable   = 0, /* LDO bypass disabled: AOP EVM uses on-board RF supply LDOs */
+    .supplyMonIrDrop   = 0, /* not applicable when bypass is disabled */
     .ioSupplyIndicator = 0, /* 3.3 V IO supply */
 };
 
