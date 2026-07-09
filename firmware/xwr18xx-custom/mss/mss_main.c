@@ -878,10 +878,14 @@ int32_t MmwDemo_configSensor(void)
         MMWave_decodeError (errCode, &errorLevel, &mmWaveErrorCode, &subsysErrorCode);
         System_printf ("Error: mmWave Config failed [Error code: %d Subsystem: %d]\n",
                         mmWaveErrorCode, subsysErrorCode);
+        MmwDemo_CLI_write(
+            "configSensor: MMWave_config FAILED level=%d mmWaveErrorCode=%d subsysErrorCode=%d\r\n",
+            (int32_t)errorLevel, (int32_t)mmWaveErrorCode, (int32_t)subsysErrorCode);
     }
     else
     {
         errCode = MmwDemo_dataPathConfig();
+        MmwDemo_CLI_write("configSensor: MmwDemo_dataPathConfig retVal=%d\r\n", errCode);
     }
 
     return errCode;
