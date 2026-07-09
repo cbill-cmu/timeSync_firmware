@@ -1082,6 +1082,7 @@ static void MmwDemo_initTask(UArg arg0, UArg arg1)
         MmwDemo_debugAssert (0);
         return;
     }
+    MmwDemo_CLI_write("mssInitTask: commandUartHandle opened OK\r\n");
     //System_printf("Debug: UART Instance %p has been opened successfully\n", gMmwMssMCB.commandUartHandle);
 
     /* Setup the default UART Parameters */
@@ -1136,6 +1137,7 @@ static void MmwDemo_initTask(UArg arg0, UArg arg1)
         return;
     }
     System_printf ("Debug: mmWave Control Initialization was successful\n");
+    MmwDemo_CLI_write("mssInitTask: MMWave_init OK, calling MMWave_sync (waits on DSS)...\r\n");
 
     /* Synchronization: This will synchronize the execution of the control module
      * between the domains. This is a prerequiste and always needs to be invoked. */
@@ -1143,10 +1145,12 @@ static void MmwDemo_initTask(UArg arg0, UArg arg1)
     {
         /* Error: Unable to synchronize the mmWave control module */
         System_printf ("Error: mmWave Control Synchronization failed [Error code %d]\n", errCode);
+        MmwDemo_CLI_write("mssInitTask: MMWave_sync FAILED errCode=%d\r\n", errCode);
         MmwDemo_debugAssert (0);
         return;
     }
     System_printf ("Debug: mmWave Control Synchronization was successful\n");
+    MmwDemo_CLI_write("mssInitTask: MMWave_sync OK\r\n");
 
     /*****************************************************************************
      * Launch the mmWave control execution task
@@ -1177,9 +1181,11 @@ static void MmwDemo_initTask(UArg arg0, UArg arg1)
     if (gMmwMssMCB.objDetDpmHandle == NULL)
     {
         System_printf ("Error: Unable to initialize the DPM Module [Error: %d]\n", errCode);
+        MmwDemo_CLI_write("mssInitTask: DPM_init FAILED errCode=%d\r\n", errCode);
         MmwDemo_debugAssert (0);
         return;
     }
+    MmwDemo_CLI_write("mssInitTask: DPM_init OK, calling DPM_synch (waits on DSS)...\r\n");
 
     /* Synchronization: This will synchronize the execution of the datapath module
      * between the domains. This is a prerequiste and always needs to be invoked. */
@@ -1193,6 +1199,7 @@ static void MmwDemo_initTask(UArg arg0, UArg arg1)
         {
             /* Error: Unable to synchronize the framework */
             System_printf ("Error: DPM Synchronization failed [Error code %d]\n", errCode);
+            MmwDemo_CLI_write("mssInitTask: DPM_synch FAILED errCode=%d\r\n", errCode);
             MmwDemo_debugAssert (0);
             return;
         }
@@ -1204,6 +1211,7 @@ static void MmwDemo_initTask(UArg arg0, UArg arg1)
         /* Sleep and poll again: */
         Task_sleep(1);
     }
+    MmwDemo_CLI_write("mssInitTask: DPM_synch OK\r\n");
 
     /* Launch the DPM Task */
     Task_Params_init(&taskParams);
@@ -1219,6 +1227,7 @@ static void MmwDemo_initTask(UArg arg0, UArg arg1)
     /*****************************************************************************
      * Initialize the CLI Module:
      *****************************************************************************/
+    MmwDemo_CLI_write("mssInitTask: reached CLIInit\r\n");
     MmwDemo_CLIInit(MMWDEMO_CLI_TASK_PRIORITY);
 
     return;
