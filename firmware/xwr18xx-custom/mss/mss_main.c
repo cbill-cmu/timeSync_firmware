@@ -791,10 +791,11 @@ int32_t MmwDemo_openSensor(bool isFirstTimeOpen)
                                             gRFLdoBypassCfg.supplyMonIrDrop,
                                             gRFLdoBypassCfg.ioSupplyIndicator);
 
-        retVal = rlRfSetLdoBypassConfig(RL_DEVICE_MAP_INTERNAL_BSS, (rlRfLdoBypassCfg_t*)&gRFLdoBypassCfg);        
+        retVal = rlRfSetLdoBypassConfig(RL_DEVICE_MAP_INTERNAL_BSS, (rlRfLdoBypassCfg_t*)&gRFLdoBypassCfg);
         if(retVal != 0)
-        {            
+        {
             System_printf("Error: rlRfSetLdoBypassConfig retVal=%d\n", retVal);
+            MmwDemo_CLI_write("openSensor: rlRfSetLdoBypassConfig FAILED retVal=%d\r\n", retVal);
             return -1;
         }
 
@@ -836,6 +837,9 @@ int32_t MmwDemo_openSensor(bool isFirstTimeOpen)
             MMWave_decodeError (errCode, &errorLevel, &mmWaveErrorCode, &subsysErrorCode);
             System_printf ("Error: mmWave Open failed [Error code: %d Subsystem: %d]\n",
                             mmWaveErrorCode, subsysErrorCode);
+            MmwDemo_CLI_write(
+                "openSensor: MMWave_open FAILED level=%d mmWaveErrorCode=%d subsysErrorCode=%d\r\n",
+                (int32_t)errorLevel, (int32_t)mmWaveErrorCode, (int32_t)subsysErrorCode);
             return -1;
         }
 
@@ -944,8 +948,11 @@ int32_t MmwDemo_startSensor(void)
         /* Error/Warning: Unable to start the mmWave module */
         MMWave_decodeError (errCode, &errorLevel, &mmWaveErrorCode, &subsysErrorCode);
         System_printf ("Error: mmWave Start failed [mmWave Error: %d Subsys: %d]\n", mmWaveErrorCode, subsysErrorCode);
+        MmwDemo_CLI_write(
+            "startSensor: MMWave_start FAILED level=%d mmWaveErrorCode=%d subsysErrorCode=%d\r\n",
+            (int32_t)errorLevel, (int32_t)mmWaveErrorCode, (int32_t)subsysErrorCode);
         /* datapath has already been moved to start state; so either we initiate a cleanup of start sequence or
-           assert here and re-start from the beginning. For now, choosing the latter path */ 
+           assert here and re-start from the beginning. For now, choosing the latter path */
         MmwDemo_debugAssert(0);
         return -1;
     }

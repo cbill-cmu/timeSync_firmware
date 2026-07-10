@@ -198,6 +198,11 @@ void MmwDemo_CLI_write (const char* format, ...)
     va_list     arg;
     char        logMessage[256];
 
+    /* Zero the buffer first: guarantees a real null terminator even if
+     * vsnprintf doesn't reliably terminate on this runtime, so strlen()
+     * below can't walk into stale stack memory past the real message. */
+    memset(logMessage, 0, sizeof(logMessage));
+
     /* Format the message: */
     va_start (arg, format);
     vsnprintf (&logMessage[0], sizeof(logMessage), format, arg);
@@ -249,7 +254,7 @@ static int32_t MmwDemo_CLISensorStart (int32_t argc, char* argv[])
                       sizeof(MmwDemo_LvdsStreamCfg), -1); // -1= all subframes
 
     retVal = tmpInitCfg();
-    MmwDemo_CLI_write("tmpInitCfg: retVal=%d\r\n", retVal);
+    MmwDemo_CLI_write("tmpInitCfg: retVal=[%d]\r\n", retVal);
     if (retVal != 0) { return retVal; }
 
     /***********************************************************************************
@@ -279,7 +284,7 @@ static int32_t MmwDemo_CLISensorStart (int32_t argc, char* argv[])
     memcpy(&gMmwMssMCB.cfg.openCfg, &openCfg, sizeof(MMWave_OpenCfg));
     /* call sensor open */
     retVal = MmwDemo_openSensor(true);
-    MmwDemo_CLI_write("openSensor: retVal=%d\r\n", retVal);
+    MmwDemo_CLI_write("openSensor: retVal=[%d]\r\n", retVal);
     if(retVal != 0) { return -1; }
     gMmwMssMCB.sensorState = MmwDemo_SensorState_OPENED;
 
@@ -290,11 +295,11 @@ static int32_t MmwDemo_CLISensorStart (int32_t argc, char* argv[])
     /* call sensor config */
     memcpy(&gMmwMssMCB.cfg.ctrlCfg, &ctrlCfg, sizeof(MMWave_CtrlCfg));
     retVal = MmwDemo_configSensor();
-    MmwDemo_CLI_write("configSensor: retVal=%d\r\n", retVal);
+    MmwDemo_CLI_write("configSensor: retVal=[%d]\r\n", retVal);
     if(retVal != 0) { return -1; }
 
     retVal = MmwDemo_startSensor();
-    MmwDemo_CLI_write("startSensor: retVal=%d\r\n", retVal);
+    MmwDemo_CLI_write("startSensor: retVal=[%d]\r\n", retVal);
     if(retVal != 0) { return -1; }
 
     /***********************************************************************************
