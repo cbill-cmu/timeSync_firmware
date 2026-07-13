@@ -68,9 +68,16 @@ void MmwDemo_platformInit(MmwDemo_platformCfg *config)
     /**********************************************************************
      * Setup the PINMUX:
      * - GPIO Output: Configure pin K13 as GPIO_2 output
+     *
+     * TEMPORARY DIAGNOSTIC OVERRIDE: forced to CHIRP_START (raw FUNC_SEL=11,
+     * ball K3 on AOP) instead of GPIO_2, to check whether CHIRP_START pulses
+     * appear on this already-known-good, already-accessible pad (LD3/R42 on
+     * the breakaway board) at all -- independent of the separate V10/RA1A tap
+     * below. This disables the status LED (LD3) while active.
+     * REVERT to SOC_XWR18XX_PINK13_PADAZ_GPIO_2 once this test is done.
      **********************************************************************/
     Pinmux_Set_OverrideCtrl(SOC_XWR18XX_PINK13_PADAZ, PINMUX_OUTEN_RETAIN_HW_CTRL, PINMUX_INPEN_RETAIN_HW_CTRL);
-    Pinmux_Set_FuncSel(SOC_XWR18XX_PINK13_PADAZ, SOC_XWR18XX_PINK13_PADAZ_GPIO_2);
+    Pinmux_Set_FuncSel(SOC_XWR18XX_PINK13_PADAZ, 11U /* CHIRP_START -- TEMP, was SOC_XWR18XX_PINK13_PADAZ_GPIO_2 */);
 
     Pinmux_Set_OverrideCtrl(SOC_XWR18XX_PING13_PADBC, PINMUX_OUTEN_RETAIN_HW_CTRL, PINMUX_INPEN_RETAIN_HW_CTRL);
     Pinmux_Set_FuncSel(SOC_XWR18XX_PING13_PADBC, SOC_XWR18XX_PING13_PADBC_SYNC_OUT);
