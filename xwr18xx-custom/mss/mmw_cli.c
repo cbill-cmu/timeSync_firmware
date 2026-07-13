@@ -192,17 +192,25 @@ void MmwDemo_CLI_write (const char* format, ...)
 {
     va_list     arg;
     char        logMessage[256];
-    int32_t     sizeMessage;
+
+    /* Zero the buffer first: guarantees a real null terminator even if
+     * vsnprintf doesn't reliably terminate on this runtime, so strlen()
+     * below can't walk into stale stack memory past the real message. */
+    memset(logMessage, 0, sizeof(logMessage));
 
     /* Format the message: */
     va_start (arg, format);
-    sizeMessage = vsnprintf (&logMessage[0], sizeof(logMessage), format, arg);
+    vsnprintf (&logMessage[0], sizeof(logMessage), format, arg);
     va_end (arg);
 
     /* Log the message on the UART CLI console: */
     if (gMmwMssMCB.commandUartHandle != NULL)
     {
-        UART_writePolling (gMmwMssMCB.commandUartHandle, (uint8_t*)&logMessage[0], sizeMessage);
+        /* Use strlen() rather than vsnprintf's return value: on this runtime
+         * the return value is not reliably the formatted length, which was
+         * sending a few bytes of stale stack memory past the real string. */
+        UART_writePolling (gMmwMssMCB.commandUartHandle, (uint8_t*)&logMessage[0],
+                            strlen(logMessage));
     }
 }
 
