@@ -68,17 +68,9 @@ void MmwDemo_platformInit(MmwDemo_platformCfg *config)
     /**********************************************************************
      * Setup the PINMUX:
      * - GPIO Output: Configure pin K13 as GPIO_2 output
-     *
-     * DIAGNOSTIC OVERRIDE (single, isolated change -- V10 is confirmed
-     * off-limits, it feeds the board's PMIC CLKIN): forced to CHIRP_START
-     * (raw FUNC_SEL=11, ball K3 on AOP) instead of GPIO_2, to check whether
-     * CHIRP_START pulses appear on this pad. K3's default role is only the
-     * cosmetic status LED (LD3) -- no other board-level consumer of it that
-     * we've found, unlike V10. This disables LD3 while active.
-     * REVERT to SOC_XWR18XX_PINK13_PADAZ_GPIO_2 once this test is done.
      **********************************************************************/
     Pinmux_Set_OverrideCtrl(SOC_XWR18XX_PINK13_PADAZ, PINMUX_OUTEN_RETAIN_HW_CTRL, PINMUX_INPEN_RETAIN_HW_CTRL);
-    Pinmux_Set_FuncSel(SOC_XWR18XX_PINK13_PADAZ, 11U /* CHIRP_START -- TEMP, was SOC_XWR18XX_PINK13_PADAZ_GPIO_2 */);
+    Pinmux_Set_FuncSel(SOC_XWR18XX_PINK13_PADAZ, SOC_XWR18XX_PINK13_PADAZ_GPIO_2);
 
     Pinmux_Set_OverrideCtrl(SOC_XWR18XX_PING13_PADBC, PINMUX_OUTEN_RETAIN_HW_CTRL, PINMUX_INPEN_RETAIN_HW_CTRL);
     Pinmux_Set_FuncSel(SOC_XWR18XX_PING13_PADBC, SOC_XWR18XX_PING13_PADBC_SYNC_OUT);
