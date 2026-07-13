@@ -69,11 +69,12 @@ void MmwDemo_platformInit(MmwDemo_platformCfg *config)
      * Setup the PINMUX:
      * - GPIO Output: Configure pin K13 as GPIO_2 output
      *
-     * TEMPORARY DIAGNOSTIC OVERRIDE: forced to CHIRP_START (raw FUNC_SEL=11,
-     * ball K3 on AOP) instead of GPIO_2, to check whether CHIRP_START pulses
-     * appear on this already-known-good, already-accessible pad (LD3/R42 on
-     * the breakaway board) at all -- independent of the separate V10/RA1A tap
-     * below. This disables the status LED (LD3) while active.
+     * DIAGNOSTIC OVERRIDE (single, isolated change -- V10 is confirmed
+     * off-limits, it feeds the board's PMIC CLKIN): forced to CHIRP_START
+     * (raw FUNC_SEL=11, ball K3 on AOP) instead of GPIO_2, to check whether
+     * CHIRP_START pulses appear on this pad. K3's default role is only the
+     * cosmetic status LED (LD3) -- no other board-level consumer of it that
+     * we've found, unlike V10. This disables LD3 while active.
      * REVERT to SOC_XWR18XX_PINK13_PADAZ_GPIO_2 once this test is done.
      **********************************************************************/
     Pinmux_Set_OverrideCtrl(SOC_XWR18XX_PINK13_PADAZ, PINMUX_OUTEN_RETAIN_HW_CTRL, PINMUX_INPEN_RETAIN_HW_CTRL);
@@ -81,27 +82,6 @@ void MmwDemo_platformInit(MmwDemo_platformCfg *config)
 
     Pinmux_Set_OverrideCtrl(SOC_XWR18XX_PING13_PADBC, PINMUX_OUTEN_RETAIN_HW_CTRL, PINMUX_INPEN_RETAIN_HW_CTRL);
     Pinmux_Set_FuncSel(SOC_XWR18XX_PING13_PADBC, SOC_XWR18XX_PING13_PADBC_SYNC_OUT);
-
-    /**********************************************************************
-     * Setup the PINMUX:
-     * - Chirp-level debug output: Configure pin P9 (ball V10 / PMIC_CLKOUT /
-     *   SOP[2] on the AOP package) as CHIRP_START output.
-     *
-     *   SOC_XWR18XX_PINP9_PADBA is documented as "Equivalent to PINV10_PADBA
-     *   on XWR18XXAOP Device" in pinmux_xwr18xx.h. FUNC_SEL=6 (CHIRP_START)
-     *   is not exposed as a named macro in this SDK release, but is
-     *   documented for ball V10 in the AWR1843AOP datasheet (Table 5-1) and
-     *   Pinmux_Set_FuncSel() performs an unchecked raw write into the 4-bit
-     *   FUNC_SEL field, so the literal mode value is used directly instead.
-     *   (FUNC_SEL values for this pad: 0=GPIO_27, 1=PMIC_CLKOUT, 6=CHIRP_START,
-     *   7=CHIRP_END, 8=FRAME_START, 11=EPWM1B, 12=EPWM2A.)
-     *
-     *   This is purely additive: SOP[2] is only latched at power-up, well
-     *   before MmwDemo_platformInit() runs, so repurposing this ball here is
-     *   safe and does not affect boot-mode sensing.
-     **********************************************************************/
-    Pinmux_Set_OverrideCtrl(SOC_XWR18XX_PINP9_PADBA, PINMUX_OUTEN_RETAIN_HW_CTRL, PINMUX_INPEN_RETAIN_HW_CTRL);
-    Pinmux_Set_FuncSel(SOC_XWR18XX_PINP9_PADBA, 6U /* CHIRP_START */);
 
     /**********************************************************************
      * Setup the PINMUX:
