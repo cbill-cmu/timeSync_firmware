@@ -516,6 +516,8 @@ exit:
     return errCode;
 }
 
+static uint32_t gSyncState = 0;
+
 // ti/control/mmwave/src/mmwave.c: this is not allowed to be null, so we stub it out.
 static int32_t MmwDemo_eventCallbackFxn(
     uint16_t msgId, uint16_t sbId, uint16_t sbLen, uint8_t *payload)
@@ -528,7 +530,8 @@ static int32_t MmwDemo_eventCallbackFxn(
          * of the DPC/datapath (which is disabled in this build for
          * continuous chirping). Toggle ball M3 (GPIO_29) here so it's a
          * hardware-timed, chirp-config-independent sync edge. */
-        GPIO_toggle(SOC_XWR18XX_GPIO_29);
+        gSyncState ^= 1U;
+        GPIO_write(SOC_XWR18XX_GPIO_29, gSyncState);
     }
 
     return 0;
