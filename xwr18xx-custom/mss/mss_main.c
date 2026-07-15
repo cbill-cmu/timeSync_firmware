@@ -540,9 +540,19 @@ static int32_t MmwDemo_eventCallbackFxn(
          * Remove once GPIO_29 is confirmed toggling on scope. */
         if (gMmwMssMCB.loggingUartHandle != NULL)
         {
-            char dbg[48];
-            snprintf(dbg, sizeof(dbg), "frameTrigger #%lu state=%lu\r\n",
-                     (unsigned long)gFrameTriggerCount, (unsigned long)gSyncState);
+            char dbg[80];
+            /* Live readback of ball K3's pad control register (PADAZ_CFG_REG,
+             * offset 0x064 from the pinmux base -> 0xFFFFEA64 per the
+             * datasheet). Expect low byte 0xDB after the PINMUX_OUTPUT_EN/
+             * PINMUX_INPUT_DIS override change: FUNC_SEL=0xB (CHIRP_START),
+             * IE_OVERRIDE_CTRL=1, IE_OVERRIDE=0, OE_OVERRIDE_CTRL=1,
+             * OE_OVERRIDE=1. If it doesn't read 0xDB, the pinmux write itself
+             * isn't landing as expected -- if it does, the problem is
+             * downstream of pinmux (RF not actually driving the signal). */
+            volatile uint32_t *k3PadReg = (volatile uint32_t *)0xFFFFEA64;
+            snprintf(dbg, sizeof(dbg), "frameTrigger #%lu state=%lu K3pad=0x%08lx\r\n",
+                     (unsigned long)gFrameTriggerCount, (unsigned long)gSyncState,
+                     (unsigned long)*k3PadReg);
             UART_writePolling(gMmwMssMCB.loggingUartHandle, (uint8_t*)dbg, strlen(dbg));
         }
         gFrameTriggerCount++;
