@@ -540,7 +540,7 @@ static int32_t MmwDemo_eventCallbackFxn(
          *   GPIO_write(SOC_XWR18XX_GPIO_29, gSyncState);
          */
         gSyncState = 0U;
-        GPIO_write(SOC_XWR18XX_GPIO_29, 0U);
+        GPIO_write(SOC_XWR18XX_GPIO_29, 1U);
 
         /* DEBUG: prove whether this branch is even being reached. Goes out
          * the dedicated logging UART (921600 baud, UART instance 1) so it's
