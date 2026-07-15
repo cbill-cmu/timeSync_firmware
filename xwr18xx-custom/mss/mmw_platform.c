@@ -101,7 +101,7 @@ void MmwDemo_platformInit(MmwDemo_platformCfg *config)
      * trigger event instead -- see MmwDemo_eventCallbackFxn in mss_main.c. */
     Pinmux_Set_OverrideCtrl(SOC_XWR18XX_PING13_PADBC, PINMUX_OUTPUT_EN, PINMUX_INPUT_DIS);
     Pinmux_Set_FuncSel(SOC_XWR18XX_PING13_PADBC, SOC_XWR18XX_PING13_PADBC_GPIO_29);
-    GPIO_setConfig(SOC_XWR18XX_GPIO_29, GPIO_CFG_OUTPUT);
+    // GPIO_setConfig(SOC_XWR18XX_GPIO_29, GPIO_CFG_OUTPUT);
     // GPIO_write(SOC_XWR18XX_GPIO_29, 0U);
 
     /**********************************************************************
