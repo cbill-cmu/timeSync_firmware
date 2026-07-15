@@ -67,10 +67,16 @@ void MmwDemo_platformInit(MmwDemo_platformCfg *config)
 
     /**********************************************************************
      * Setup the PINMUX:
-     * - GPIO Output: Configure pin K13 as GPIO_2 output
+     * - Ball K3 (SDK id PINK13_PADAZ): CHIRP_START instead of GPIO_2.
+     *   Raw FUNC_SEL=11 per the AWR1843AOP datasheet Table 5-1; this SDK's
+     *   pinmux_xwr18xx.h has no named macro for it since it predates the
+     *   AOP-specific alternate functions. True hardware pulse straight off
+     *   RadarSS -- no MSS software/mailbox involvement, no jitter, and
+     *   chirp-level (not just frame-level). Costs the DS3 status LED,
+     *   which was driven off this same pad as GPIO_2/SensorStatusGPIO.
      **********************************************************************/
     Pinmux_Set_OverrideCtrl(SOC_XWR18XX_PINK13_PADAZ, PINMUX_OUTEN_RETAIN_HW_CTRL, PINMUX_INPEN_RETAIN_HW_CTRL);
-    Pinmux_Set_FuncSel(SOC_XWR18XX_PINK13_PADAZ, SOC_XWR18XX_PINK13_PADAZ_GPIO_2);
+    Pinmux_Set_FuncSel(SOC_XWR18XX_PINK13_PADAZ, 11U /* CHIRP_START */);
 
     /* Ball M3 (pad PING13_PADBC): muxed to GPIO_29 instead of SYNC_OUT.
      * SYNC_OUT never toggled on scope across repeated attempts; RadarSS
@@ -105,7 +111,10 @@ void MmwDemo_platformInit(MmwDemo_platformCfg *config)
 
     /**********************************************************************
      * Setup the GPIO:
-     * - GPIO Output: Configure pin K13 as GPIO_2 output
+     * - GPIO Output: pin K13 is no longer muxed as GPIO_2 (now CHIRP_START,
+     *   see above), so this GPIO_2 config/write is now a no-op on the
+     *   physical pin -- the DS3 status LED stays dark. Left in place since
+     *   it's harmless and other code still reads SensorStatusGPIO.
      **********************************************************************/
     config->SensorStatusGPIO    = SOC_XWR18XX_GPIO_2;
 
