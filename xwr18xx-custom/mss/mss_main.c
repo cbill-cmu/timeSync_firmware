@@ -529,18 +529,10 @@ static int32_t MmwDemo_eventCallbackFxn(
     {
         /* Frame-trigger-ready fires once per frame off RadarSS, independent
          * of the DPC/datapath (which is disabled in this build for
-         * continuous chirping).
-         *
-         * HARDCODED LOW FOR NOW: toggle disabled while debugging why no
-         * pulse shows up on the scope. GPIO_29 is forced low every frame
-         * instead of toggling, so it's a known, deliberate flat line
-         * (not just an untouched pin) while we isolate the issue.
-         * To re-enable toggling, restore:
-         *   gSyncState ^= 1U;
-         *   GPIO_write(SOC_XWR18XX_GPIO_29, gSyncState);
-         */
-        gSyncState = 0U;
-        GPIO_write(SOC_XWR18XX_GPIO_29, 1U);
+         * continuous chirping). Toggle ball M3 (GPIO_29) here so it's a
+         * hardware-timed, chirp-config-independent sync edge. */
+        gSyncState ^= 1U;
+        GPIO_write(SOC_XWR18XX_GPIO_29, gSyncState);
 
         /* DEBUG: prove whether this branch is even being reached. Goes out
          * the dedicated logging UART (921600 baud, UART instance 1) so it's
