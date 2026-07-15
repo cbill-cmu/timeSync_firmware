@@ -63,129 +63,45 @@ static void MmwDemo_CfgUpdate(void *srcPtr, uint32_t offset, uint32_t size, int8
     }
 }
 
-MMWave_CtrlCfg ctrlCfg;
-MMWave_OpenCfg openCfg;
-static int32_t tmpChirpCfg(int idx) {
-    int32_t errCode;
+/**
+ *  @b Description
+ *  @n
+ *      Utility function used by many CLI command handlers to parse and
+ *      validate the leading <subFrameIdx> argument.
+ *
+ *  @param[in] argc Number of arguments
+ *  @param[in] argv Arguments
+ *  @param[in] expectedArgc Expected number of arguments for the calling command
+ *  @param[out] subFrameNum Parsed sub-frame index
+ *
+ *  @retval
+ *      Success -   0
+ *  @retval
+ *      Error   -   <0
+ */
+static int32_t MmwDemo_CLIGetSubframe(int32_t argc, char* argv[], int32_t expectedArgc,
+                                       int8_t* subFrameNum)
+{
+    int8_t subframe;
 
-    double mmwave_freq_scale_factor = SOC_getDeviceRFFreqScaleFactor(
-        gMmwMssMCB.socHandle, &errCode);
-    if (errCode != 0) { return errCode; }
-
-    rlChirpCfg_t chirpCfg;
-    memset ((void *)&chirpCfg, 0, sizeof(rlChirpCfg_t));
-
-    chirpCfg.chirpStartIdx   = idx;
-    chirpCfg.chirpEndIdx     = idx;
-    chirpCfg.profileId       = 0;  // use chirp ID 0 for now
-
-    /* Translate from Hz to number of [1 LSB = (gCLI_mmwave_freq_scale_factor * 1e9) / 2^26 Hz]
-     * units of mmwavelink format */
-    chirpCfg.startFreqVar = (uint32_t) (0.0 * (1U << 26) / (mmwave_freq_scale_factor * 1e9));
-
-    /* Translate from KHz/us to number of [1 LSB = (gCLI_mmwave_freq_scale_factor * 1e6) * 900 /2^26 KHz/us]
-     * units of mmwavelink format */
-    chirpCfg.freqSlopeVar    = (uint16_t) (0.0 * (1U << 26) / (mmwave_freq_scale_factor * 1e6 * 900.0));
-
-    /* Translate from us to [1 LSB = 10ns] units of mmwavelink format */
-    chirpCfg.idleTimeVar     = (uint32_t)(0.0 * 1000.0 / 10.0);
-
-    /* Translate from us to [1 LSB = 10ns] units of mmwavelink format */
-    chirpCfg.adcStartTimeVar = (uint32_t)(0.0 * 1000.0 / 10.0);
-
-    chirpCfg.txEnable        = 1 << idx;
-
-    MMWave_ProfileHandle profileHandle2;
-    if (MMWave_getProfileHandle (gMmwMssMCB.ctrlHandle, chirpCfg.profileId,
-                                 &profileHandle2, &errCode) < 0)
+    if (argc != expectedArgc)
     {
-        return errCode;
-    }
-    if (MMWave_addChirp (profileHandle2, &chirpCfg, &errCode) == NULL)
-    {
-        return errCode;
+        CLI_write ("Error: Invalid usage of the CLI command\n");
+        return -1;
     }
 
+    /* Subframe info is always in position 1 */
+    subframe = (int8_t) atoi(argv[1]);
+
+    if (subframe >= (int8_t)RL_MAX_SUBFRAMES)
+    {
+        CLI_write ("Error: Subframe number is invalid\n");
+        return -1;
+    }
+
+    *subFrameNum = subframe;
     return 0;
 }
-
-
-static int32_t tmpInitCfg() {
-    int32_t errCode;
-
-    ctrlCfg.dfeDataOutputMode = MMWave_DFEDataOutputMode_FRAME;  // =1
-
-    memset((void *)&openCfg.adcOutCfg, 0, sizeof(rlAdcOutCfg_t));
-    openCfg.adcOutCfg.fmt.b2AdcBits = 2;
-    openCfg.adcOutCfg.fmt.b2AdcOutFmt = 1;
- 
-    memset((void *)&openCfg.lowPowerMode, 0, sizeof(rlLowPowerModeCfg_t));
-    openCfg.lowPowerMode.lpAdcMode = 0; // regular mode
-
-    memset((void *)&openCfg.chCfg, 0, sizeof(rlChanCfg_t));
-    openCfg.chCfg.rxChannelEn = 0b1111;
-    openCfg.chCfg.txChannelEn = 0b111;
-    openCfg.chCfg.cascading = 0;  // single chip
-
-    double mmwave_freq_scale_factor = SOC_getDeviceRFFreqScaleFactor(
-        gMmwMssMCB.socHandle, &errCode);
-    if (errCode != 0) { return errCode; }
-
-    /// frame cfg
-    memset ((void *)&ctrlCfg.u.frameCfg.frameCfg, 0, sizeof(rlFrameCfg_t));
-    ctrlCfg.u.frameCfg.frameCfg.chirpStartIdx      = 0;
-    ctrlCfg.u.frameCfg.frameCfg.chirpEndIdx        = 2;
-    ctrlCfg.u.frameCfg.frameCfg.numLoops           = 128;
-    ctrlCfg.u.frameCfg.frameCfg.numFrames          = 0;
-    ctrlCfg.u.frameCfg.frameCfg.framePeriodicity   = (uint32_t)(125.0 * 1000000 / 5);
-    ctrlCfg.u.frameCfg.frameCfg.triggerSelect      = 1;  // software trigger
-    ctrlCfg.u.frameCfg.frameCfg.frameTriggerDelay  = (uint32_t)(0.0 * 1000000 / 5);
-
-    rlProfileCfg_t profileCfg;
-    memset ((void *)&profileCfg, 0, sizeof(rlProfileCfg_t));
-
-    profileCfg.profileId = 0;  // profile ID 0
-
-    // Translate from GHz to [1 LSB = gCLI_mmwave_freq_scale_factor * 1e9 / 2^26 Hz] units
-    // of mmwavelink format
-    profileCfg.startFreqConst = (uint32_t) (77.0 * (1U << 26) / mmwave_freq_scale_factor);
-
-    /* Translate below times from us to [1 LSB = 10 ns] units of mmwavelink format */
-    profileCfg.idleTimeConst         = (uint32_t)(200.0 * 1000 / 10);
-    profileCfg.adcStartTimeConst     = (uint32_t)(5.7 * 1000 / 10);
-    profileCfg.rampEndTime           = (uint32_t)(59.0 * 1000 / 10);
-
-    profileCfg.txOutPowerBackoffCode = 0; // no backoff
-    profileCfg.txPhaseShifter        = 0; // no phase shifter
-
-    /* Translate from MHz/us to [1 LSB = (gCLI_mmwave_freq_scale_factor * 1e6 * 900) / 2^26 kHz/uS]
-     * units of mmwavelink format */
-    profileCfg.freqSlopeConst = (int16_t)(
-        67.012 * (1U << 26) / ((mmwave_freq_scale_factor * 1e3) * 900.0));
-
-    /* Translate from us to [1 LSB = 10 ns] units of mmwavelink format */
-    profileCfg.txStartTime           = (int32_t)(1.0 * 1000 / 10);
-
-    profileCfg.numAdcSamples         = 128;   // 128 samples
-    profileCfg.digOutSampleRate      = 2500;  // 2500Ksps
-    profileCfg.hpfCornerFreq1        = 0;     // 175KHz
-    profileCfg.hpfCornerFreq2        = 0;     // 350KHz
-    profileCfg.rxGain                = 30;    // 30dB
-
-    MMWave_ProfileHandle profileHandle = MMWave_addProfile (gMmwMssMCB.ctrlHandle, &profileCfg, &errCode);
-    if (profileHandle == NULL) { return errCode; }
-
-    ctrlCfg.u.frameCfg.profileHandle[profileCfg.profileId] = profileHandle;
-    // ptrBaseCfgProfileHandle = ctrlCfg->u.advancedFrameCfg.profileHandle[0U];
-
-    int i;
-    for(i = 0; i <= 2; i++) {
-        tmpChirpCfg(i);
-    }
-
-    return 0;
-}
-
 
 /* Minimal CLI Write implementation */
 void MmwDemo_CLI_write (const char* format, ...)
@@ -215,9 +131,124 @@ void MmwDemo_CLI_write (const char* format, ...)
 }
 
 
+/**
+ *  @b Description
+ *  @n
+ *      CLI Handler for "adcbufCfg". Direct port of the equivalent handler
+ *      in the stock mmwave_sdk demo (packages/ti/demo/xwr18xx/mmw/mss/mmw_cli.c).
+ */
+static int32_t MmwDemo_CLIADCBufCfg (int32_t argc, char* argv[])
+{
+    MmwDemo_ADCBufCfg   adcBufCfg;
+    int8_t              subFrameNum;
+
+    if (gMmwMssMCB.sensorState == MmwDemo_SensorState_STARTED)
+    {
+        CLI_write ("Ignored: This command is not allowed after sensor has started\n");
+        return 0;
+    }
+
+    if (MmwDemo_CLIGetSubframe(argc, argv, 6, &subFrameNum) < 0)
+    {
+        return -1;
+    }
+
+    memset ((void *)&adcBufCfg, 0, sizeof(adcBufCfg));
+    adcBufCfg.adcFmt          = (uint8_t) atoi (argv[2]);
+    adcBufCfg.iqSwapSel       = (uint8_t) atoi (argv[3]);
+    adcBufCfg.chInterleave    = (uint8_t) atoi (argv[4]);
+    adcBufCfg.chirpThreshold  = (uint8_t) atoi (argv[5]);
+
+    /* This demo is using HWA for 1D processing which does not allow multi-chirp
+     * processing */
+    if (adcBufCfg.chirpThreshold != 1)
+    {
+        CLI_write("Error: chirpThreshold must be 1, multi-chirp is not allowed\n");
+        return -1;
+    }
+
+    MmwDemo_CfgUpdate((void *)&adcBufCfg,
+                      MMWDEMO_ADCBUFCFG_OFFSET,
+                      sizeof(MmwDemo_ADCBufCfg), subFrameNum);
+    return 0;
+}
+
+/**
+ *  @b Description
+ *  @n
+ *      CLI Handler for "lvdsStreamCfg". Direct port of the equivalent handler
+ *      in the stock mmwave_sdk demo.
+ */
+static int32_t MmwDemo_CLILvdsStreamCfg (int32_t argc, char* argv[])
+{
+    MmwDemo_LvdsStreamCfg   cfg;
+    int8_t                  subFrameNum;
+
+    if (gMmwMssMCB.sensorState == MmwDemo_SensorState_STARTED)
+    {
+        CLI_write ("Ignored: This command is not allowed after sensor has started\n");
+        return 0;
+    }
+
+    if (MmwDemo_CLIGetSubframe(argc, argv, 5, &subFrameNum) < 0)
+    {
+        return -1;
+    }
+
+    memset ((void *)&cfg, 0, sizeof(MmwDemo_LvdsStreamCfg));
+    cfg.isHeaderEnabled = (bool)    atoi(argv[2]);
+    cfg.dataFmt         = (uint8_t) atoi(argv[3]);
+    cfg.isSwEnabled     = (bool)    atoi(argv[4]);
+
+    if ((cfg.isSwEnabled == true) && (cfg.dataFmt != MMW_DEMO_LVDS_STREAM_CFG_DATAFMT_DISABLED))
+    {
+        if (cfg.isHeaderEnabled == false)
+        {
+            CLI_write("Error: header must be enabled when both h/w and s/w streaming are enabled\n");
+            return -1;
+        }
+    }
+
+    MmwDemo_CfgUpdate((void *)&cfg,
+                      MMWDEMO_LVDSSTREAMCFG_OFFSET,
+                      sizeof(MmwDemo_LvdsStreamCfg), subFrameNum);
+    return 0;
+}
+
+/**
+ *  @b Description
+ *  @n
+ *      Shared handler for CLI commands that are purely cosmetic in this
+ *      build (guiMonitor, cfarCfg, etc. -- detection-chain tuning knobs
+ *      that don't matter since the DPC/datapath is disabled here, see
+ *      MmwDemo_startSensor). We still need to accept and acknowledge them:
+ *      xwr.radar's setup() sends them unconditionally and treats anything
+ *      other than "Done" as a protocol error.
+ */
+static int32_t MmwDemo_CLINoOp (int32_t argc, char* argv[])
+{
+    return 0;
+}
+
+/**
+ *  @b Description
+ *  @n
+ *      CLI Handler for "sensorStart". Simplified relative to the stock
+ *      demo: this build has no pending-config state machine
+ *      (MmwDemo_isAllCfgInPendingState() and friends), so we always
+ *      reconfigure from whatever the CLI mmWave extension currently holds.
+ *      That matches how xwr.radar drives the board -- setup() always sends
+ *      full configuration before start().
+ */
 static int32_t MmwDemo_CLISensorStart (int32_t argc, char* argv[])
 {
-    int32_t     retVal = 0;
+    int32_t     retVal;
+
+    if (gMmwMssMCB.sensorState == MmwDemo_SensorState_STARTED)
+    {
+        CLI_write ("Ignored: Sensor is already started\n");
+        return 0;
+    }
 
     if ((gMmwMssMCB.sensorState != MmwDemo_SensorState_STOPPED) &&
         (gMmwMssMCB.sensorState != MmwDemo_SensorState_INIT) &&
@@ -227,75 +258,28 @@ static int32_t MmwDemo_CLISensorStart (int32_t argc, char* argv[])
         gMmwMssMCB.sensorState = MmwDemo_SensorState_STOPPED;
     }
 
-    // ADC Buffers
-    MmwDemo_ADCBufCfg   adcBufCfg;
-    memset ((void *)&adcBufCfg, 0, sizeof(adcBufCfg));
-    adcBufCfg.adcFmt          = 0;  // COMPLEX_1X
-    adcBufCfg.iqSwapSel       = 1;  // MSB_LSB_IQ
-    adcBufCfg.chInterleave    = 1;  // non-interleaved
-    adcBufCfg.chirpThreshold  = 1;  // ???
-    MmwDemo_CfgUpdate((void *)&adcBufCfg,
-                      MMWDEMO_ADCBUFCFG_OFFSET,
-                      sizeof(MmwDemo_ADCBufCfg), -1); // all subframes
+    /* Pull in whatever profileCfg/chirpCfg/frameCfg/channelCfg/adcCfg/
+     * dfeDataOutputMode/lowPower commands have configured so far -- these
+     * are parsed and stored internally by the CLI's mmWave extension. */
+    CLI_getMMWaveExtensionConfig (&gMmwMssMCB.cfg.ctrlCfg);
+    gMmwMssMCB.objDetCommonCfg.preStartCommonCfg.numSubFrames =
+        MmwDemo_RFParser_getNumSubFrames(&gMmwMssMCB.cfg.ctrlCfg);
 
-    // LVDS Stream
-    MmwDemo_LvdsStreamCfg   cfg;
-    memset ((void *)&cfg, 0, sizeof(MmwDemo_LvdsStreamCfg));
-    cfg.isHeaderEnabled = false;
-    cfg.dataFmt         = 1;  // MMW_DEMO_LVDS_STREAM_CFG_DATAFMT_ADC
-    cfg.isSwEnabled     = false;
-    MmwDemo_CfgUpdate((void *)&cfg,
-                      MMWDEMO_LVDSSTREAMCFG_OFFSET,
-                      sizeof(MmwDemo_LvdsStreamCfg), -1); // -1= all subframes
-
-    retVal = tmpInitCfg();
-    if (retVal != 0) { return retVal; }
-
-    /***********************************************************************************
-     * Do sensor state management to influence the sensor actions
-     ***********************************************************************************/
-
-    /* Error checking initial state: no partial config is allowed 
-       until the first sucessful sensor start state */
-    if ((gMmwMssMCB.sensorState == MmwDemo_SensorState_INIT) || 
-         (gMmwMssMCB.sensorState == MmwDemo_SensorState_OPENED))
+    if ((gMmwMssMCB.sensorState == MmwDemo_SensorState_INIT) ||
+        (gMmwMssMCB.sensorState == MmwDemo_SensorState_OPENED))
     {
-        /* need to get number of sub-frames so that next function to check
-         * pending state can work */
-        gMmwMssMCB.objDetCommonCfg.preStartCommonCfg.numSubFrames =
-            MmwDemo_RFParser_getNumSubFrames(&ctrlCfg);
+        CLI_getMMWaveExtensionOpenConfig (&gMmwMssMCB.cfg.openCfg);
+        retVal = MmwDemo_openSensor(true);
+        if (retVal != 0) { return -1; }
+        gMmwMssMCB.sensorState = MmwDemo_SensorState_OPENED;
     }
 
-    /* need to get number of sub-frames so that next function to check
-        * pending state can work */
-    gMmwMssMCB.objDetCommonCfg.preStartCommonCfg.numSubFrames =
-        MmwDemo_RFParser_getNumSubFrames(&ctrlCfg);
-
-    /***********************************************************************************
-     * Retreive and check mmwave Open related config before calling openSensor
-     ***********************************************************************************/
-    /* Get the open configuration: */
-    memcpy(&gMmwMssMCB.cfg.openCfg, &openCfg, sizeof(MMWave_OpenCfg));
-    /* call sensor open */
-    retVal = MmwDemo_openSensor(true);
-    if(retVal != 0) { return -1; }
-    gMmwMssMCB.sensorState = MmwDemo_SensorState_OPENED;
-
-    /***********************************************************************************
-     * Retrieve mmwave Control related config before calling startSensor
-     ***********************************************************************************/
-    /* if MmwDemo_openSensor has non-first time related processing, call here again*/
-    /* call sensor config */
-    memcpy(&gMmwMssMCB.cfg.ctrlCfg, &ctrlCfg, sizeof(MMWave_CtrlCfg));
     retVal = MmwDemo_configSensor();
-    if(retVal != 0) { return -1; }
+    if (retVal != 0) { return -1; }
 
     retVal = MmwDemo_startSensor();
-    if(retVal != 0) { return -1; }
+    if (retVal != 0) { return -1; }
 
-    /***********************************************************************************
-     * Set the state
-     ***********************************************************************************/
     gMmwMssMCB.sensorState = MmwDemo_SensorState_STARTED;
     return 0;
 }
@@ -303,15 +287,50 @@ static int32_t MmwDemo_CLISensorStart (int32_t argc, char* argv[])
 /**
  *  @b Description
  *  @n
- *      This is the CLI Execution Task
+ *      CLI Handler for "sensorStop".
+ */
+static int32_t MmwDemo_CLISensorStop (int32_t argc, char* argv[])
+{
+    if ((gMmwMssMCB.sensorState == MmwDemo_SensorState_STOPPED) ||
+        (gMmwMssMCB.sensorState == MmwDemo_SensorState_INIT) ||
+        (gMmwMssMCB.sensorState == MmwDemo_SensorState_OPENED))
+    {
+        CLI_write ("Ignored: Sensor is already stopped\n");
+        return 0;
+    }
+
+    MmwDemo_stopSensor();
+    gMmwMssMCB.sensorState = MmwDemo_SensorState_STOPPED;
+    return 0;
+}
+
+/**
+ *  @b Description
+ *  @n
+ *      Sets up and launches the CLI task. Uses the CLI library's mmWave
+ *      extension (ti/utils/cli/cli.h) for the standard mmwavelink commands
+ *      (dfeDataOutputMode, channelCfg, adcCfg, profileCfg, chirpCfg,
+ *      frameCfg, advFrameCfg, lowPower, contModeCfg); everything else
+ *      needed by xwr.radar's setup()/start()/stop() sequence is registered
+ *      below.
  *
  *  @retval
  *      Not Applicable.
  */
 void MmwDemo_CLIInit (uint8_t taskPriority)
 {
-    memset ((void *)&ctrlCfg, 0, sizeof(MMWave_CtrlCfg));
-    memset ((void *)&openCfg, 0, sizeof(MMWave_OpenCfg));
+    CLI_Cfg     cliCfg;
+    uint32_t    cnt;
+    uint32_t    i;
+    /* Cosmetic commands xwr.radar's setup() boilerplate sends but which
+     * have no effect in this build -- see MmwDemo_CLINoOp. */
+    const char* noOpCmds[] = {
+        "guiMonitor", "cfarCfg", "multiObjBeamForming", "calibDcRangeSig",
+        "clutterRemoval", "aoaFovCfg", "cfarFovCfg",
+        "measureRangeBiasAndRxChanPhase", "extendedMaxVelocity",
+        "CQRxSatMonitor", "CQSigImgMonitor", "analogMonitor", "calibData",
+        "compRangeBiasAndRxChanPhase"
+    };
 
     /* Sanity check UART handle */
     if (gMmwMssMCB.commandUartHandle == NULL)
@@ -320,7 +339,52 @@ void MmwDemo_CLIInit (uint8_t taskPriority)
         return;
     }
 
-    /* Manually start the sensor since we are not using CLI */
-    MmwDemo_CLISensorStart(0, NULL);
+    memset ((void *)&cliCfg, 0, sizeof(CLI_Cfg));
+
+    cliCfg.cliPrompt              = "mmwDemo:/>";
+    cliCfg.cliBanner              = "timeSync custom firmware -- CLI ready\n";
+    cliCfg.cliUartHandle          = gMmwMssMCB.commandUartHandle;
+    cliCfg.taskPriority           = taskPriority;
+    cliCfg.socHandle              = gMmwMssMCB.socHandle;
+    cliCfg.mmWaveHandle           = gMmwMssMCB.ctrlHandle;
+    cliCfg.enableMMWaveExtension  = 1U;
+    cliCfg.usePolledMode          = true;
+    cliCfg.overridePlatform       = true;
+    cliCfg.overridePlatformString = "xWR18xx_AOP";
+
+    cnt = 0;
+    cliCfg.tableEntry[cnt].cmd            = "sensorStart";
+    cliCfg.tableEntry[cnt].helpString     = "[doReconfig(unused, always reconfigures)]";
+    cliCfg.tableEntry[cnt].cmdHandlerFxn  = MmwDemo_CLISensorStart;
+    cnt++;
+
+    cliCfg.tableEntry[cnt].cmd            = "sensorStop";
+    cliCfg.tableEntry[cnt].helpString     = "No arguments";
+    cliCfg.tableEntry[cnt].cmdHandlerFxn  = MmwDemo_CLISensorStop;
+    cnt++;
+
+    cliCfg.tableEntry[cnt].cmd            = "adcbufCfg";
+    cliCfg.tableEntry[cnt].helpString     = "<subFrameIdx> <adcOutputFmt> <SampleSwap> <ChanInterleave> <ChirpThreshold>";
+    cliCfg.tableEntry[cnt].cmdHandlerFxn  = MmwDemo_CLIADCBufCfg;
+    cnt++;
+
+    cliCfg.tableEntry[cnt].cmd            = "lvdsStreamCfg";
+    cliCfg.tableEntry[cnt].helpString     = "<subFrameIdx> <enableHeader> <dataFmt> <enableSW>";
+    cliCfg.tableEntry[cnt].cmdHandlerFxn  = MmwDemo_CLILvdsStreamCfg;
+    cnt++;
+
+    for (i = 0; i < sizeof(noOpCmds) / sizeof(noOpCmds[0]); i++)
+    {
+        cliCfg.tableEntry[cnt].cmd            = (char*) noOpCmds[i];
+        cliCfg.tableEntry[cnt].helpString     = "No-op in this build";
+        cliCfg.tableEntry[cnt].cmdHandlerFxn  = MmwDemo_CLINoOp;
+        cnt++;
+    }
+
+    if (CLI_open (&cliCfg) < 0)
+    {
+        System_printf ("Error: Unable to open the CLI\n");
+        return;
+    }
     return;
 }

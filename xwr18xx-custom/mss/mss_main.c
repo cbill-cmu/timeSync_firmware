@@ -517,6 +517,7 @@ exit:
 }
 
 static uint32_t gSyncState = 0;
+static uint32_t gFrameTriggerCount = 0;
 
 // ti/control/mmwave/src/mmwave.c: this is not allowed to be null, so we stub it out.
 static int32_t MmwDemo_eventCallbackFxn(
@@ -532,6 +533,19 @@ static int32_t MmwDemo_eventCallbackFxn(
          * hardware-timed, chirp-config-independent sync edge. */
         gSyncState ^= 1U;
         GPIO_write(SOC_XWR18XX_GPIO_29, gSyncState);
+
+        /* DEBUG: prove whether this branch is even being reached. Goes out
+         * the dedicated logging UART (921600 baud, UART instance 1) so it's
+         * visible even though the command UART/CLI link is currently dead.
+         * Remove once GPIO_29 is confirmed toggling on scope. */
+        if (gMmwMssMCB.loggingUartHandle != NULL)
+        {
+            char dbg[48];
+            snprintf(dbg, sizeof(dbg), "frameTrigger #%lu state=%lu\r\n",
+                     (unsigned long)gFrameTriggerCount, (unsigned long)gSyncState);
+            UART_writePolling(gMmwMssMCB.loggingUartHandle, (uint8_t*)dbg, strlen(dbg));
+        }
+        gFrameTriggerCount++;
     }
 
     return 0;
