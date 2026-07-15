@@ -552,7 +552,7 @@ static int32_t MmwDemo_eventCallbackFxn(
             volatile uint32_t *k3PadReg = (volatile uint32_t *)0xFFFFEA64;
             snprintf(dbg, sizeof(dbg), "frameTrigger #%lu state=%lu K3pad=0x%08lx\r\n",
                      (unsigned long)gFrameTriggerCount, (unsigned long)gSyncState,
-                     (unsigned long)*k3PadReg);
+                     (unsigned long)*k3PadReg); //Debugging 
             UART_writePolling(gMmwMssMCB.loggingUartHandle, (uint8_t*)dbg, strlen(dbg));
         }
         gFrameTriggerCount++;
