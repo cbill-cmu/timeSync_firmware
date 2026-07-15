@@ -74,8 +74,15 @@ void MmwDemo_platformInit(MmwDemo_platformCfg *config)
      *   RadarSS -- no MSS software/mailbox involvement, no jitter, and
      *   chirp-level (not just frame-level). Costs the DS3 status LED,
      *   which was driven off this same pad as GPIO_2/SensorStatusGPIO.
+     *
+     *   Output override is forced EN here rather than RETAIN_HW_CTRL:
+     *   CHIRP_START is an RF/BSS-domain debug tap, not an MSS peripheral
+     *   like GPIO_2/UART that manages its own pad output-enable, so
+     *   "retain hardware control" of OE likely just leaves the buffer
+     *   permanently disabled (this is the same override pattern that
+     *   left SYNC_OUT on ball M3 permanently flat too).
      **********************************************************************/
-    Pinmux_Set_OverrideCtrl(SOC_XWR18XX_PINK13_PADAZ, PINMUX_OUTEN_RETAIN_HW_CTRL, PINMUX_INPEN_RETAIN_HW_CTRL);
+    Pinmux_Set_OverrideCtrl(SOC_XWR18XX_PINK13_PADAZ, PINMUX_OUTPUT_EN, PINMUX_INPUT_DIS);
     Pinmux_Set_FuncSel(SOC_XWR18XX_PINK13_PADAZ, 11U /* CHIRP_START */);
 
     /* Ball M3 (pad PING13_PADBC): muxed to GPIO_29 instead of SYNC_OUT.
