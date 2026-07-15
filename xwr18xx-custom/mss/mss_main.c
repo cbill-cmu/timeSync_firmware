@@ -543,12 +543,14 @@ static int32_t MmwDemo_eventCallbackFxn(
             char dbg[80];
             /* Live readback of ball K3's pad control register (PADAZ_CFG_REG,
              * offset 0x064 from the pinmux base -> 0xFFFFEA64 per the
-             * datasheet). Expect low byte 0xDB after the PINMUX_OUTPUT_EN/
-             * PINMUX_INPUT_DIS override change: FUNC_SEL=0xB (CHIRP_START),
-             * IE_OVERRIDE_CTRL=1, IE_OVERRIDE=0, OE_OVERRIDE_CTRL=1,
-             * OE_OVERRIDE=1. If it doesn't read 0xDB, the pinmux write itself
-             * isn't landing as expected -- if it does, the problem is
-             * downstream of pinmux (RF not actually driving the signal). */
+             * datasheet). Expect low byte 0xDD with FUNC_SEL=13 (FRAME_START):
+             * FUNC_SEL=0xD, IE_OVERRIDE_CTRL=1, IE_OVERRIDE=0,
+             * OE_OVERRIDE_CTRL=1, OE_OVERRIDE=1 -- low nibble tracks whatever
+             * FUNC_SEL is currently set to in mmw_platform.c (0xDB for 11/
+             * CHIRP_START, 0xDC for 12/CHIRP_END, 0xDD for 13/FRAME_START).
+             * If the low nibble doesn't match the configured FUNC_SEL, the
+             * pinmux write itself isn't landing -- if it does match, the
+             * problem is downstream of pinmux (RF not driving the signal). */
             volatile uint32_t *k3PadReg = (volatile uint32_t *)0xFFFFEA64;
             snprintf(dbg, sizeof(dbg), "frameTrigger #%lu state=%lu K3pad=0x%08lx\r\n",
                      (unsigned long)gFrameTriggerCount, (unsigned long)gSyncState,

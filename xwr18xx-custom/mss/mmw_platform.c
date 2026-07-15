@@ -81,9 +81,19 @@ void MmwDemo_platformInit(MmwDemo_platformCfg *config)
      *   "retain hardware control" of OE likely just leaves the buffer
      *   permanently disabled (this is the same override pattern that
      *   left SYNC_OUT on ball M3 permanently flat too).
+     *
+     *   FUNC_SEL=11 (CHIRP_START) confirmed correctly landing in the pad
+     *   register (readback 0xDB) but never actually pulsed on scope while
+     *   actively chirping -- suspect RadarSS just doesn't drive this
+     *   class of debug signal in this firmware (TI has said as much for
+     *   the related AWR2243). Testing FRAME_START (13) next per same
+     *   K3/PINK13_PADAZ table: GPIO_26=0, GPIO_2=1, OSC_CLKOUT=2,
+     *   MSS_UARTB_TX=7, BSS_UART_TX=8, SYNC_OUT=9, PMIC_CLKOUT=10,
+     *   CHIRP_START=11, CHIRP_END=12, FRAME_START=13. Swap the literal
+     *   below to try each in turn.
      **********************************************************************/
     Pinmux_Set_OverrideCtrl(SOC_XWR18XX_PINK13_PADAZ, PINMUX_OUTPUT_EN, PINMUX_INPUT_DIS);
-    Pinmux_Set_FuncSel(SOC_XWR18XX_PINK13_PADAZ, 11U /* CHIRP_START */);
+    Pinmux_Set_FuncSel(SOC_XWR18XX_PINK13_PADAZ, 13U /* FRAME_START -- was 11U CHIRP_START */);
 
     /* Ball M3 (pad PING13_PADBC): muxed to GPIO_29 instead of SYNC_OUT.
      * SYNC_OUT never toggled on scope across repeated attempts; RadarSS
