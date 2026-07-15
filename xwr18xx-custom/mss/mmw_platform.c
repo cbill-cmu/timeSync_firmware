@@ -92,7 +92,7 @@ void MmwDemo_platformInit(MmwDemo_platformCfg *config)
      *   CHIRP_START=11, CHIRP_END=12, FRAME_START=13. Swap the literal
      *   below to try each in turn.
      **********************************************************************/
-    Pinmux_Set_OverrideCtrl(SOC_XWR18XX_PINK13_PADAZ, PINMUX_OUTPUT_EN, PINMUX_INPUT_DIS);
+    Pinmux_Set_OverrideCtrl(SOC_XWR18XX_PINK13_PADAZ, PINMUX_OUTEN_RETAIN_HW_CTRL, PINMUX_INPEN_RETAIN_HW_CTRL);
     Pinmux_Set_FuncSel(SOC_XWR18XX_PINK13_PADAZ, 13U /* FRAME_START -- was 11U CHIRP_START */);
 
     /* Ball M3 (pad PING13_PADBC): muxed to GPIO_29 instead of SYNC_OUT.
