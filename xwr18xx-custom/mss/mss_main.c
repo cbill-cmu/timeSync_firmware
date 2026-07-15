@@ -518,7 +518,21 @@ exit:
 
 // ti/control/mmwave/src/mmwave.c: this is not allowed to be null, so we stub it out.
 static int32_t MmwDemo_eventCallbackFxn(
-    uint16_t msgId, uint16_t sbId, uint16_t sbLen, uint8_t *payload) { return 0; }
+    uint16_t msgId, uint16_t sbId, uint16_t sbLen, uint8_t *payload)
+{
+    uint16_t asyncSB = RL_GET_SBID_FROM_UNIQ_SBID(sbId);
+
+    if ((msgId == RL_RF_ASYNC_EVENT_MSG) && (asyncSB == RL_RF_AE_FRAME_TRIGGER_RDY_SB))
+    {
+        /* Frame-trigger-ready fires once per frame off RadarSS, independent
+         * of the DPC/datapath (which is disabled in this build for
+         * continuous chirping). Toggle ball M3 (GPIO_29) here so it's a
+         * hardware-timed, chirp-config-independent sync edge. */
+        GPIO_toggle(SOC_XWR18XX_GPIO_29);
+    }
+
+    return 0;
+}
 
 /**
  *  @b Description
