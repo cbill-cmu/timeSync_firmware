@@ -79,7 +79,7 @@ void MmwDemo_platformInit(MmwDemo_platformCfg *config)
     Pinmux_Set_OverrideCtrl(SOC_XWR18XX_PING13_PADBC, PINMUX_OUTEN_RETAIN_HW_CTRL, PINMUX_INPEN_RETAIN_HW_CTRL);
     Pinmux_Set_FuncSel(SOC_XWR18XX_PING13_PADBC, SOC_XWR18XX_PING13_PADBC_GPIO_29);
     GPIO_setConfig(SOC_XWR18XX_GPIO_29, GPIO_CFG_OUTPUT);
-    GPIO_write(SOC_XWR18XX_GPIO_29, 1U);
+    GPIO_write(SOC_XWR18XX_GPIO_29, 0U);
 
     /**********************************************************************
      * Setup the PINMUX:
