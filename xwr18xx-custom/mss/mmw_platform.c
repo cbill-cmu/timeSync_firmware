@@ -74,26 +74,9 @@ void MmwDemo_platformInit(MmwDemo_platformCfg *config)
      *   RadarSS -- no MSS software/mailbox involvement, no jitter, and
      *   chirp-level (not just frame-level). Costs the DS3 status LED,
      *   which was driven off this same pad as GPIO_2/SensorStatusGPIO.
-     *
-     *   Output override is forced EN here rather than RETAIN_HW_CTRL:
-     *   CHIRP_START is an RF/BSS-domain debug tap, not an MSS peripheral
-     *   like GPIO_2/UART that manages its own pad output-enable, so
-     *   "retain hardware control" of OE likely just leaves the buffer
-     *   permanently disabled (this is the same override pattern that
-     *   left SYNC_OUT on ball M3 permanently flat too).
-     *
-     *   FUNC_SEL=11 (CHIRP_START) confirmed correctly landing in the pad
-     *   register (readback 0xDB) but never actually pulsed on scope while
-     *   actively chirping -- suspect RadarSS just doesn't drive this
-     *   class of debug signal in this firmware (TI has said as much for
-     *   the related AWR2243). Testing FRAME_START (13) next per same
-     *   K3/PINK13_PADAZ table: GPIO_26=0, GPIO_2=1, OSC_CLKOUT=2,
-     *   MSS_UARTB_TX=7, BSS_UART_TX=8, SYNC_OUT=9, PMIC_CLKOUT=10,
-     *   CHIRP_START=11, CHIRP_END=12, FRAME_START=13. Swap the literal
-     *   below to try each in turn.
      **********************************************************************/
-    Pinmux_Set_OverrideCtrl(SOC_XWR18XX_PINK13_PADAZ, PINMUX_OUTPUT_EN, PINMUX_INPUT_DIS);
-    Pinmux_Set_FuncSel(SOC_XWR18XX_PINK13_PADAZ, 13U /* FRAME_START -- was 11U CHIRP_START */);
+    Pinmux_Set_OverrideCtrl(SOC_XWR18XX_PINK13_PADAZ, PINMUX_OUTEN_RETAIN_HW_CTRL, PINMUX_INPEN_RETAIN_HW_CTRL);
+    Pinmux_Set_FuncSel(SOC_XWR18XX_PINK13_PADAZ, 11U /* CHIRP_START */);
 
     /* Ball M3 (pad PING13_PADBC): muxed to GPIO_29 instead of SYNC_OUT.
      * SYNC_OUT never toggled on scope across repeated attempts; RadarSS
@@ -101,7 +84,7 @@ void MmwDemo_platformInit(MmwDemo_platformCfg *config)
      * trigger event instead -- see MmwDemo_eventCallbackFxn in mss_main.c. */
     Pinmux_Set_OverrideCtrl(SOC_XWR18XX_PING13_PADBC, PINMUX_OUTEN_RETAIN_HW_CTRL, PINMUX_INPEN_RETAIN_HW_CTRL);
     Pinmux_Set_FuncSel(SOC_XWR18XX_PING13_PADBC, SOC_XWR18XX_PING13_PADBC_GPIO_29);
-    // GPIO_setConfig(SOC_XWR18XX_GPIO_29, GPIO_CFG_OUTPUT);
+    GPIO_setConfig(SOC_XWR18XX_GPIO_29, GPIO_CFG_OUTPUT);
     // GPIO_write(SOC_XWR18XX_GPIO_29, 0U);
 
     /**********************************************************************
@@ -128,10 +111,7 @@ void MmwDemo_platformInit(MmwDemo_platformCfg *config)
 
     /**********************************************************************
      * Setup the GPIO:
-     * - GPIO Output: pin K13 is no longer muxed as GPIO_2 (now CHIRP_START,
-     *   see above), so this GPIO_2 config/write is now a no-op on the
-     *   physical pin -- the DS3 status LED stays dark. Left in place since
-     *   it's harmless and other code still reads SensorStatusGPIO.
+     * - GPIO Output: Configure pin K13 as GPIO_2 output
      **********************************************************************/
     config->SensorStatusGPIO    = SOC_XWR18XX_GPIO_2;
 

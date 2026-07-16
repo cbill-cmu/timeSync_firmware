@@ -992,7 +992,7 @@ int32_t MmwDemo_startSensor(void)
     /*****************************************************************************
      * The sensor has been started successfully. Switch on the LED 
      *****************************************************************************/
-    GPIO_write (gMmwMssMCB.cfg.platformCfg.SensorStatusGPIO, 1U);
+    // GPIO_write (gMmwMssMCB.cfg.platformCfg.SensorStatusGPIO, 1U);
 
     gMmwMssMCB.sensorStartCount++;
     return 0;
@@ -1047,7 +1047,7 @@ void MmwDemo_stopSensor(void)
     }
 
     /* The sensor has been stopped successfully. Switch off the LED */
-    GPIO_write (gMmwMssMCB.cfg.platformCfg.SensorStatusGPIO, 0U);
+    // GPIO_write (gMmwMssMCB.cfg.platformCfg.SensorStatusGPIO, 0U);
 
     gMmwMssMCB.sensorStopCount++;
 
