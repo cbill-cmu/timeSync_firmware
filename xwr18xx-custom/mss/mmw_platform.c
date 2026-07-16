@@ -110,20 +110,21 @@ void MmwDemo_platformInit(MmwDemo_platformCfg *config)
     Pinmux_Set_FuncSel(SOC_XWR18XX_PINP12_PADAO, SOC_XWR18XX_PINP12_PADAO_QSPI_D3);
 
     /**********************************************************************
-     * Setup the GPIO:
-     * - GPIO Output: Configure pin K13 as GPIO_2 output
-    //  **********************************************************************/
+     * GPIO Output: pin K13 is no longer muxed as GPIO_2 (now CHIRP_START,
+     * see above), so SensorStatusGPIO/DS3 LED is dead code on the physical
+     * pin -- left commented out since it does nothing. The clock/baud rate
+     * lines below are NOT related to K13/GPIO_2 and must stay active: the
+     * command and logging UARTs are opened using these values in
+     * mss_main.c, so leaving them unset (0) breaks all UART communication,
+     * including the CLI link sync.py depends on.
+     **********************************************************************/
     // config->SensorStatusGPIO    = SOC_XWR18XX_GPIO_2;
-
-    // /* Initialize the DEMO configuration: */
-    // config->sysClockFrequency   = MSS_SYS_VCLK;
-    // config->loggingBaudRate     = 921600;
-    // config->commandBaudRate     = 115200;
-
-    // /**********************************************************************
-    //  * Setup the DS3 LED on the EVM connected to GPIO_2
-    //  **********************************************************************/
     // GPIO_setConfig (config->SensorStatusGPIO, GPIO_CFG_OUTPUT);
+
+    /* Initialize the DEMO configuration: */
+    config->sysClockFrequency   = MSS_SYS_VCLK;
+    config->loggingBaudRate     = 921600;
+    config->commandBaudRate     = 115200;
 }
 
 /**
