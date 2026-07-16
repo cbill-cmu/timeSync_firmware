@@ -75,7 +75,7 @@ void MmwDemo_platformInit(MmwDemo_platformCfg *config)
      *   chirp-level (not just frame-level). Costs the DS3 status LED,
      *   which was driven off this same pad as GPIO_2/SensorStatusGPIO.
      **********************************************************************/
-    Pinmux_Set_OverrideCtrl(SOC_XWR18XX_PINK13_PADAZ, PINMUX_OUTEN_RETAIN_HW_CTRL, PINMUX_INPEN_RETAIN_HW_CTRL);
+    Pinmux_Set_OverrideCtrl(SOC_XWR18XX_PINK13_PADAZ, PINMUX_OUTPUT_EN, PINMUX_INPUT_DIS);
     Pinmux_Set_FuncSel(SOC_XWR18XX_PINK13_PADAZ, 11U /* CHIRP_START */);
 
     /* Ball M3 (pad PING13_PADBC): muxed to GPIO_29 instead of SYNC_OUT.
