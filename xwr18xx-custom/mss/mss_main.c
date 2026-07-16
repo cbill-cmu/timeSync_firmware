@@ -518,6 +518,17 @@ exit:
 
 static uint32_t gSyncState = 0;
 static uint32_t gFrameTriggerCount = 0;
+static Clock_Handle gSyncToggleClockHandle = NULL;
+
+/* Periodic toggle for the sync pulse on K3/GPIO_2 (DS3/LED3) -- runs in
+ * Swi context off a BIOS Clock, so keep this minimal: no UART/blocking
+ * calls here, just the GPIO write. See MmwDemo_startSensor/stopSensor for
+ * where the Clock is created/started and stopped/deleted. */
+static void MmwDemo_syncToggleClockFxn(UArg arg0)
+{
+    gSyncState ^= 1U;
+    GPIO_write(SOC_XWR18XX_GPIO_2, gSyncState);
+}
 
 // ti/control/mmwave/src/mmwave.c: this is not allowed to be null, so we stub it out.
 static int32_t MmwDemo_eventCallbackFxn(
@@ -527,34 +538,17 @@ static int32_t MmwDemo_eventCallbackFxn(
 
     if ((msgId == RL_RF_ASYNC_EVENT_MSG) && (asyncSB == RL_RF_AE_FRAME_TRIGGER_RDY_SB))
     {
-        /* Frame-trigger-ready fires once per frame off RadarSS, independent
-         * of the DPC/datapath (which is disabled in this build for
-         * continuous chirping). Toggle ball M3 (GPIO_29) here so it's a
-         * hardware-timed, chirp-config-independent sync edge. */
-        gSyncState ^= 1U;
-        GPIO_write(SOC_XWR18XX_GPIO_29, gSyncState);
-
-        /* DEBUG: prove whether this branch is even being reached. Goes out
-         * the dedicated logging UART (921600 baud, UART instance 1) so it's
-         * visible even though the command UART/CLI link is currently dead.
-         * Remove once GPIO_29 is confirmed toggling on scope. */
+        /* One-shot "RF armed and running" ack, fired once per sensorStart --
+         * not a per-frame heartbeat (confirmed via mmwavelink docs and
+         * empirically: this only ever fires once per start). Kept as a
+         * confirmation that MMWave_start actually succeeded; the real
+         * per-frame pulse now comes from MmwDemo_syncToggleClockFxn's
+         * periodic Clock instead of this event. */
         if (gMmwMssMCB.loggingUartHandle != NULL)
         {
-            char dbg[80];
-            /* Live readback of ball K3's pad control register (PADAZ_CFG_REG,
-             * offset 0x064 from the pinmux base -> 0xFFFFEA64 per the
-             * datasheet). Expect low byte 0xDD with FUNC_SEL=13 (FRAME_START):
-             * FUNC_SEL=0xD, IE_OVERRIDE_CTRL=1, IE_OVERRIDE=0,
-             * OE_OVERRIDE_CTRL=1, OE_OVERRIDE=1 -- low nibble tracks whatever
-             * FUNC_SEL is currently set to in mmw_platform.c (0xDB for 11/
-             * CHIRP_START, 0xDC for 12/CHIRP_END, 0xDD for 13/FRAME_START).
-             * If the low nibble doesn't match the configured FUNC_SEL, the
-             * pinmux write itself isn't landing -- if it does match, the
-             * problem is downstream of pinmux (RF not driving the signal). */
-            volatile uint32_t *k3PadReg = (volatile uint32_t *)0xFFFFEA64;
-            snprintf(dbg, sizeof(dbg), "frameTrigger #%lu state=%lu K3pad=0x%08lx\r\n",
-                     (unsigned long)gFrameTriggerCount, (unsigned long)gSyncState,
-                     (unsigned long)*k3PadReg); //Debugging 
+            char dbg[48];
+            snprintf(dbg, sizeof(dbg), "frameTrigger #%lu\r\n",
+                     (unsigned long)gFrameTriggerCount);
             UART_writePolling(gMmwMssMCB.loggingUartHandle, (uint8_t*)dbg, strlen(dbg));
         }
         gFrameTriggerCount++;
@@ -990,9 +984,30 @@ int32_t MmwDemo_startSensor(void)
     }
 
     /*****************************************************************************
-     * The sensor has been started successfully. Switch on the LED 
+     * The sensor has been started successfully. Switch on the LED
      *****************************************************************************/
-    // GPIO_write (gMmwMssMCB.cfg.platformCfg.SensorStatusGPIO, 1U);
+    GPIO_write (gMmwMssMCB.cfg.platformCfg.SensorStatusGPIO, 1U);
+
+    /* Start the periodic sync-pulse toggle on the same GPIO (K3/GPIO_2/
+     * DS3 LED), timed to the configured frame period. framePeriodicity is
+     * in raw mmwavelink units (1 LSB = 5ns), so ms = raw * 5 / 1e6. */
+    {
+        uint32_t     framePeriodMs = (gMmwMssMCB.cfg.ctrlCfg.u.frameCfg.frameCfg.framePeriodicity * 5UL) / 1000000UL;
+        Clock_Params clockParams;
+
+        if (framePeriodMs == 0U)
+        {
+            framePeriodMs = 1U;
+        }
+
+        if (gSyncToggleClockHandle == NULL)
+        {
+            Clock_Params_init(&clockParams);
+            clockParams.period     = framePeriodMs;
+            clockParams.startFlag  = TRUE;
+            gSyncToggleClockHandle = Clock_create(MmwDemo_syncToggleClockFxn, framePeriodMs, &clockParams, NULL);
+        }
+    }
 
     gMmwMssMCB.sensorStartCount++;
     return 0;
@@ -1047,7 +1062,15 @@ void MmwDemo_stopSensor(void)
     }
 
     /* The sensor has been stopped successfully. Switch off the LED */
-    // GPIO_write (gMmwMssMCB.cfg.platformCfg.SensorStatusGPIO, 0U);
+    GPIO_write (gMmwMssMCB.cfg.platformCfg.SensorStatusGPIO, 0U);
+
+    /* Stop the periodic sync-pulse toggle */
+    if (gSyncToggleClockHandle != NULL)
+    {
+        Clock_stop(gSyncToggleClockHandle);
+        Clock_delete(&gSyncToggleClockHandle);
+        gSyncToggleClockHandle = NULL;
+    }
 
     gMmwMssMCB.sensorStopCount++;
 

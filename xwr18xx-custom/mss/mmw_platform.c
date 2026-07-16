@@ -67,25 +67,25 @@ void MmwDemo_platformInit(MmwDemo_platformCfg *config)
 
     /**********************************************************************
      * Setup the PINMUX:
-     * - Ball K3 (SDK id PINK13_PADAZ): CHIRP_START instead of GPIO_2.
-     *   Raw FUNC_SEL=11 per the AWR1843AOP datasheet Table 5-1; this SDK's
-     *   pinmux_xwr18xx.h has no named macro for it since it predates the
-     *   AOP-specific alternate functions. True hardware pulse straight off
-     *   RadarSS -- no MSS software/mailbox involvement, no jitter, and
-     *   chirp-level (not just frame-level). Costs the DS3 status LED,
-     *   which was driven off this same pad as GPIO_2/SensorStatusGPIO.
+     * - GPIO Output: Configure pin K13 as GPIO_2 output (drives DS3/LED3).
+     *   Reverted from CHIRP_START/FRAME_START: both were confirmed
+     *   correctly landing in the pad register (via readback) but RadarSS
+     *   never actually drove either signal while actively chirping --
+     *   matches TI's own statement for the related AWR2243 that there's
+     *   no real hardware path to a chirp-interrupt pin. Pivoting to a
+     *   software-driven pulse on this same LED-connected pin instead --
+     *   see the periodic Clock toggle in mss_main.c.
      **********************************************************************/
-    Pinmux_Set_OverrideCtrl(SOC_XWR18XX_PINK13_PADAZ, PINMUX_OUTPUT_EN, PINMUX_INPUT_DIS);
-    Pinmux_Set_FuncSel(SOC_XWR18XX_PINK13_PADAZ, 11U /* CHIRP_START */);
+    Pinmux_Set_OverrideCtrl(SOC_XWR18XX_PINK13_PADAZ, PINMUX_OUTEN_RETAIN_HW_CTRL, PINMUX_INPEN_RETAIN_HW_CTRL);
+    Pinmux_Set_FuncSel(SOC_XWR18XX_PINK13_PADAZ, SOC_XWR18XX_PINK13_PADAZ_GPIO_2);
 
-    /* Ball M3 (pad PING13_PADBC): muxed to GPIO_29 instead of SYNC_OUT.
-     * SYNC_OUT never toggled on scope across repeated attempts; RadarSS
-     * appears not to drive it. GPIO_29 is host-driven from the frame
-     * trigger event instead -- see MmwDemo_eventCallbackFxn in mss_main.c. */
+    /* Ball M3 (pad PING13_PADBC): left on GPIO_29 (idle, driven low once,
+     * not actively toggled anymore -- SYNC_OUT never worked here either;
+     * see K3/GPIO_2 above for the current sync-pulse approach). */
     Pinmux_Set_OverrideCtrl(SOC_XWR18XX_PING13_PADBC, PINMUX_OUTEN_RETAIN_HW_CTRL, PINMUX_INPEN_RETAIN_HW_CTRL);
     Pinmux_Set_FuncSel(SOC_XWR18XX_PING13_PADBC, SOC_XWR18XX_PING13_PADBC_GPIO_29);
     GPIO_setConfig(SOC_XWR18XX_GPIO_29, GPIO_CFG_OUTPUT);
-    // GPIO_write(SOC_XWR18XX_GPIO_29, 0U);
+    GPIO_write(SOC_XWR18XX_GPIO_29, 0U);
 
     /**********************************************************************
      * Setup the PINMUX:
@@ -110,21 +110,20 @@ void MmwDemo_platformInit(MmwDemo_platformCfg *config)
     Pinmux_Set_FuncSel(SOC_XWR18XX_PINP12_PADAO, SOC_XWR18XX_PINP12_PADAO_QSPI_D3);
 
     /**********************************************************************
-     * GPIO Output: pin K13 is no longer muxed as GPIO_2 (now CHIRP_START,
-     * see above), so SensorStatusGPIO/DS3 LED is dead code on the physical
-     * pin -- left commented out since it does nothing. The clock/baud rate
-     * lines below are NOT related to K13/GPIO_2 and must stay active: the
-     * command and logging UARTs are opened using these values in
-     * mss_main.c, so leaving them unset (0) breaks all UART communication,
-     * including the CLI link sync.py depends on.
+     * Setup the GPIO:
+     * - GPIO Output: Configure pin K13 as GPIO_2 output
      **********************************************************************/
-    // config->SensorStatusGPIO    = SOC_XWR18XX_GPIO_2;
-    // GPIO_setConfig (config->SensorStatusGPIO, GPIO_CFG_OUTPUT);
+    config->SensorStatusGPIO    = SOC_XWR18XX_GPIO_2;
 
     /* Initialize the DEMO configuration: */
     config->sysClockFrequency   = MSS_SYS_VCLK;
     config->loggingBaudRate     = 921600;
     config->commandBaudRate     = 115200;
+
+    /**********************************************************************
+     * Setup the DS3 LED on the EVM connected to GPIO_2
+     **********************************************************************/
+    GPIO_setConfig (config->SensorStatusGPIO, GPIO_CFG_OUTPUT);
 }
 
 /**
