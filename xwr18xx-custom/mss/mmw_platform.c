@@ -112,18 +112,18 @@ void MmwDemo_platformInit(MmwDemo_platformCfg *config)
     /**********************************************************************
      * Setup the GPIO:
      * - GPIO Output: Configure pin K13 as GPIO_2 output
-     **********************************************************************/
-    config->SensorStatusGPIO    = SOC_XWR18XX_GPIO_2;
+    //  **********************************************************************/
+    // config->SensorStatusGPIO    = SOC_XWR18XX_GPIO_2;
 
-    /* Initialize the DEMO configuration: */
-    config->sysClockFrequency   = MSS_SYS_VCLK;
-    config->loggingBaudRate     = 921600;
-    config->commandBaudRate     = 115200;
+    // /* Initialize the DEMO configuration: */
+    // config->sysClockFrequency   = MSS_SYS_VCLK;
+    // config->loggingBaudRate     = 921600;
+    // config->commandBaudRate     = 115200;
 
-    /**********************************************************************
-     * Setup the DS3 LED on the EVM connected to GPIO_2
-     **********************************************************************/
-    GPIO_setConfig (config->SensorStatusGPIO, GPIO_CFG_OUTPUT);
+    // /**********************************************************************
+    //  * Setup the DS3 LED on the EVM connected to GPIO_2
+    //  **********************************************************************/
+    // GPIO_setConfig (config->SensorStatusGPIO, GPIO_CFG_OUTPUT);
 }
 
 /**
