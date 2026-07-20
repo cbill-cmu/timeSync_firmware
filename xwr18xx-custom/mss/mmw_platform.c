@@ -1,4 +1,4 @@
-/* Platform-specific initialization */
+/* Platform-specific initialization : firmware version 1.0 LVDS-WORKING*/
 
 #include <stdint.h>
 #include <string.h>
