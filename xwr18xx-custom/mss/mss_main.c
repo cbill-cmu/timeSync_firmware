@@ -520,14 +520,18 @@ static uint32_t gSyncState = 0;
 static uint32_t gFrameTriggerCount = 0;
 static Clock_Handle gSyncToggleClockHandle = NULL;
 
-/* Periodic toggle for the sync pulse on K3/GPIO_2 (DS3/LED3) -- runs in
- * Swi context off a BIOS Clock, so keep this minimal: no UART/blocking
- * calls here, just the GPIO write. See MmwDemo_startSensor/stopSensor for
- * where the Clock is created/started and stopped/deleted. */
+/* Periodic toggle for the sync pulse, driven on two pins together:
+ * - GPIO_2 (K3/DS3 LED) -- visual confirmation, same as before.
+ * - GPIO_31 (DMM_DP0/U7), wired straight through to J11 connector pin 19 --
+ *   the actual output for an external MCU to tap and interrupt on.
+ * Runs in Swi context off a BIOS Clock, so keep this minimal: no UART/
+ * blocking calls here, just the GPIO writes. See MmwDemo_startSensor/
+ * stopSensor for where the Clock is created/started and stopped/deleted. */
 static void MmwDemo_syncToggleClockFxn(UArg arg0)
 {
     gSyncState ^= 1U;
     GPIO_write(SOC_XWR18XX_GPIO_2, gSyncState);
+    GPIO_write(SOC_XWR18XX_GPIO_31, gSyncState);
 }
 
 // ti/control/mmwave/src/mmwave.c: this is not allowed to be null, so we stub it out.

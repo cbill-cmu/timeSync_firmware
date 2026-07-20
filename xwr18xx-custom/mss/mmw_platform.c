@@ -89,6 +89,25 @@ void MmwDemo_platformInit(MmwDemo_platformCfg *config)
 
     /**********************************************************************
      * Setup the PINMUX:
+     * - Ball U7 (non-AOP name R4, pad PADBF): GPIO_31 instead of DMM
+     *   TRACE_DATA0/DMM0. This pad is physically wired straight through to
+     *   the J11 (DCA1000) 60-pin HD connector as DMM_DP0 -> connector pin
+     *   19, per the PROC106B schematic (AOP_IO sheet + BREAKAWAY_60PIN_CONN
+     *   sheet). Unlike GPIO_0/1/2 (which only route to the J2/MMWAVEICBOOST
+     *   connector, not J11), this ball is accessible at the DCA1000
+     *   connector we already have mated -- no new soldering to the radar
+     *   board needed. This is a real MSS GPIO pad (not an RF-domain debug
+     *   tap like SYNC_OUT/CHIRP_START), so RETAIN_HW_CTRL works the same
+     *   way it does for K3/GPIO_2. Driven from the same periodic Clock
+     *   toggle in mss_main.c as GPIO_2, so both toggle together.
+     **********************************************************************/
+    Pinmux_Set_OverrideCtrl(SOC_XWR18XX_PINR4_PADBF, PINMUX_OUTEN_RETAIN_HW_CTRL, PINMUX_INPEN_RETAIN_HW_CTRL);
+    Pinmux_Set_FuncSel(SOC_XWR18XX_PINR4_PADBF, SOC_XWR18XX_PINR4_PADBF_GPIO_31);
+    GPIO_setConfig(SOC_XWR18XX_GPIO_31, GPIO_CFG_OUTPUT);
+    GPIO_write(SOC_XWR18XX_GPIO_31, 0U);
+
+    /**********************************************************************
+     * Setup the PINMUX:
      * - for QSPI Flash
      **********************************************************************/
     Pinmux_Set_OverrideCtrl(SOC_XWR18XX_PINR12_PADAP, PINMUX_OUTEN_RETAIN_HW_CTRL, PINMUX_INPEN_RETAIN_HW_CTRL);
