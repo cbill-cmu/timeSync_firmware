@@ -550,9 +550,19 @@ static int32_t MmwDemo_eventCallbackFxn(
          * periodic Clock instead of this event. */
         if (gMmwMssMCB.loggingUartHandle != NULL)
         {
-            char dbg[48];
-            snprintf(dbg, sizeof(dbg), "frameTrigger #%lu\r\n",
-                     (unsigned long)gFrameTriggerCount);
+            char dbg[80];
+            /* DEBUG: live readback of ball U7/DP0's pad control register
+             * (PADBF_CFG_REG, offset 0x07C -> 0xFFFFEA7C). This is a static
+             * config register (FUNC_SEL/override bits), set once during
+             * MmwDemo_platformInit and never touched again -- reading it
+             * once here is enough, no need for a per-toggle readback.
+             * Expect low nibble (FUNC_SEL) = 0x1 (GPIO_31). If it's not,
+             * the pinmux write for this pad isn't landing as configured --
+             * if it is, the ~1.72V-instead-of-3.3V issue is downstream of
+             * pinmux (real board-level loading, not a config problem). */
+            volatile uint32_t *dp0PadReg = (volatile uint32_t *)0xFFFFEA7C;
+            snprintf(dbg, sizeof(dbg), "frameTrigger #%lu DP0pad=0x%08lx\r\n",
+                     (unsigned long)gFrameTriggerCount, (unsigned long)*dp0PadReg);
             UART_writePolling(gMmwMssMCB.loggingUartHandle, (uint8_t*)dbg, strlen(dbg));
         }
         gFrameTriggerCount++;
