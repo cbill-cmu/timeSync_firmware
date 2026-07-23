@@ -6,3 +6,4 @@ mmw_configPkg*
 obj_*
 release/*
 *.tar
+victim.yaml
