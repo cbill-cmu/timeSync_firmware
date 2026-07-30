@@ -1,31 +1,54 @@
 # timeSync_firmware
 
-Custom TI mmWave MSS/DSS firmware for an **AWR1843AOP**-based board, forked from TI's
-mmWave SDK demo to add a hardware frame-sync pulse (see
-[`xwr18xx-custom/mss/mss_main.c`](xwr18xx-custom/mss/mss_main.c)) for external
-timestamp correlation with an MCU. Derived from the TI mmWave demo firmware (BSD-3);
-modifications licensed under similar terms (MIT) -- see `LICENSE` and
-`LICENSE-MODIFICATIONS`. See the [main `xwr` documentation](https://radarml.github.io/xwr/firmware)
-for background on the upstream project this was forked from.
+Multi-sensor time-sync system: an **AWR1843AOP** radar, a ZED camera capture
+card, and a ublox GPS timing module all feed a common STM32 hub, which
+timestamps every sensor's signal against a GPS-disciplined clock and streams
+the result over serial. See [`docs/system-design.md`](docs/system-design.md)
+for the full architecture.
+
+This repo currently also carries the custom TI mmWave MSS/DSS firmware for
+the AWR1843AOP board, forked from TI's mmWave SDK demo to add a hardware
+frame-sync pulse (see
+[`radar_firmware/xwr18xx-custom/mss/mss_main.c`](radar_firmware/xwr18xx-custom/mss/mss_main.c))
+for external timestamp correlation with an MCU. Derived from the TI mmWave
+demo firmware (BSD-3); modifications licensed under similar terms (MIT) --
+see `LICENSE` and `LICENSE-MODIFICATIONS`. See the
+[main `xwr` documentation](https://radarml.github.io/xwr/firmware) for
+background on the upstream project this was forked from.
 
 ## Repository Layout
 
-- `xwr18xx-custom/` -- the actively developed firmware (frame-sync GPIO additions,
-  CLI/platform tweaks). This is what you build and flash for this project.
-- `xwr18xx/` -- baseline demo, kept for reference/diffing against upstream.
-- `debug_console.py` -- reconnecting serial console for watching MSS boot/CLI output.
-  The AWR1843AOP's CP2105 USB-UART bridge drops off the bus on a full power cycle, so
-  plain terminals (`screen`/`picocom`) die when the device node disappears; this script
-  polls and reconnects automatically.
-- `victim.example.yaml` -- template for `victim.yaml` (radar serial port + chirp config
-  used by `debug_console.py` / `sync.py`). Copy it and fill in your board's port:
-  ```bash
-  cp victim.example.yaml victim.yaml
-  ```
-  `victim.yaml` is gitignored and untracked (machine-specific serial-port path), so
-  edit your local copy freely -- it won't show up in `git status`.
-- `sync.py` -- host-side capture/sync script.
-- `release.sh` -- packages `xwr18xx-custom`'s built `.bin` files into `release.tar`.
+- [`docs/`](docs) -- system design and architecture docs; start with
+  [`docs/system-design.md`](docs/system-design.md).
+- [`radar_firmware/`](radar_firmware) -- the AWR1843AOP radar firmware:
+  - `xwr18xx-custom/` -- the actively developed firmware (frame-sync GPIO
+    additions, CLI/platform tweaks). This is what you build and flash for
+    this project.
+  - `xwr18xx/` -- baseline demo, kept for reference/diffing against upstream.
+  - `release.sh` -- packages `xwr18xx-custom`'s built `.bin` files into
+    `release.tar`.
+- [`sensors/`](sensors) -- STM32-hub-side per-sensor driver/integration
+  modules (GPS, radar-sync capture, camera-strobe capture, and future
+  sensors). See [`sensors/README.md`](sensors/README.md).
+- [`stm32-hub/`](stm32-hub) -- the STM32 (Nucleo-64, STM32L476RG) firmware
+  that owns the shared timebase, generic input-capture pipeline, and serial
+  streaming. See [`stm32-hub/README.md`](stm32-hub/README.md).
+- [`host/`](host) -- host-side tooling:
+  - `debug_console.py` -- reconnecting serial console for watching MSS
+    boot/CLI output. The AWR1843AOP's CP2105 USB-UART bridge drops off the
+    bus on a full power cycle, so plain terminals (`screen`/`picocom`) die
+    when the device node disappears; this script polls and reconnects
+    automatically.
+  - `victim.example.yaml` -- template for `victim.yaml` (radar serial port +
+    chirp config used by `debug_console.py` / `sync.py`). Copy it and fill in
+    your board's port:
+    ```bash
+    cp host/victim.example.yaml host/victim.yaml
+    ```
+    `victim.yaml` is gitignored and untracked (machine-specific serial-port
+    path), so edit your local copy freely -- it won't show up in
+    `git status`.
+  - `sync.py` -- host-side capture/sync script.
 
 ## Prerequisites
 
@@ -44,9 +67,9 @@ for background on the upstream project this was forked from.
   sudo apt-get update
   sudo apt-get install libc6:i386 libstdc++6:i386 mono-complete -y
   ```
-- Python 3 + `uv` for the host-side tooling (`debug_console.py`, `sync.py`):
+- Python 3 + `uv` for the host-side tooling (`host/debug_console.py`, `host/sync.py`):
   ```bash
-  uv run python debug_console.py --config victim.yaml
+  uv run python host/debug_console.py --config host/victim.yaml
   ```
 
 ## Downloading / Environment Setup
@@ -64,8 +87,8 @@ for background on the upstream project this was forked from.
 
 ## Building
 
-From `xwr18xx-custom/`, with the SDK environment sourced and these variables set for
-the AWR1843AOP:
+From `radar_firmware/xwr18xx-custom/`, with the SDK environment sourced and these
+variables set for the AWR1843AOP:
 
 ```bash
 export MMWAVE_SDK_DEVICE=awr18xx
@@ -89,7 +112,7 @@ Other useful targets (`gmake help` prints these):
 
 ### Build output
 
-Successful builds land directly in `xwr18xx-custom/`:
+Successful builds land directly in `radar_firmware/xwr18xx-custom/`:
 
 - `xwr18xx_mmw_demo.bin`
 - `xwr18xx_mmw_aop_demo.bin` -- use this one for the AOP board.
@@ -124,14 +147,15 @@ Each `.bin` is a combined metaImage (MSS + BSS/RADARSS + DSS) ready for UniFlash
 
 - CLI/config port: 115200 baud.
 - On this board, use the CP2105's **Enhanced (`if00`)** control port for the CLI --
-  that's the port `victim.yaml` should reference. `ls -l /dev/serial/by-id/` to find it.
+  that's the port `host/victim.yaml` should reference. `ls -l /dev/serial/by-id/` to
+  find it.
 - Because the CP2105 loses power (and its `/dev` node) on a full board power cycle,
   use `debug_console.py` instead of a plain terminal to keep logging across resets:
   ```bash
-  cp victim.example.yaml victim.yaml   # first time only -- fill in your board's port
-  uv run python debug_console.py --config victim.yaml
+  cp host/victim.example.yaml host/victim.yaml   # first time only -- fill in your board's port
+  uv run python host/debug_console.py --config host/victim.yaml
   ```
-- For radar chirp/frame config and capture parameters, see `victim.yaml`.
+- For radar chirp/frame config and capture parameters, see `host/victim.yaml`.
 
 ## Hardware Reference: Sync/GPIO Pinout & Where to Probe
 
@@ -145,7 +169,8 @@ Each `.bin` is a combined metaImage (MSS + BSS/RADARSS + DSS) ready for UniFlash
 
 ### Currently used: the frame-sync pulse
 
-Driven in `MmwDemo_syncToggleClockFxn` ([`xwr18xx-custom/mss/mss_main.c`](xwr18xx-custom/mss/mss_main.c)):
+Driven in `MmwDemo_syncToggleClockFxn`
+([`radar_firmware/xwr18xx-custom/mss/mss_main.c`](radar_firmware/xwr18xx-custom/mss/mss_main.c)):
 
 - **`GPIO_31`**, wired to `DMM_DP0` -- physically routed to **pin 19** of the 60-pin HD
   connector (this board's `J11`). This is the output meant for an external MCU to tap.
