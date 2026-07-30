@@ -7,39 +7,67 @@ with a plain Makefile (no IDE required).
 
 ## Status
 
-**Stage 1 (bring-up) is done and verified building/linking correctly.**
-Nothing GPS/timer/capture-related exists yet -- this stage exists purely to
-prove the toolchain, vector table, linker script, and flash flow are correct
-*before* any interrupt-driven timing code goes on top of them, since a wrong
-foundation there (e.g. a misassigned interrupt vector) is a nasty class of
-bug to chase on real hardware.
+**Stage 1 (bring-up) is done and confirmed working on real hardware --
+LD2 blinks.** Nothing GPS/timer/capture-related exists yet -- this stage
+exists purely to prove the toolchain, vector table, linker script, and flash
+flow are correct *before* any interrupt-driven timing code goes on top of
+them.
 
 - `src/startup_stm32l476rg.S` -- vector table transcribed from ST's official
   `cmsis_device_l4` startup file and diffed line-for-line against it (all
   101 vector entries and all 91 weak handler aliases match exactly). Do not
   hand-edit the vector table; re-pull from
   https://github.com/STMicroelectronics/cmsis_device_l4 instead.
-- `linker/stm32l476rg.ld` -- correct memory map for this exact part: 1024K
-  flash @ `0x08000000`, 128K RAM @ `0x20000000`.
+- `linker/stm32l476rg.ld` -- **RAM is deliberately limited to 96K
+  (SRAM1 only, `0x20000000`-`0x20017FFF`), not the full 128K.** See
+  "SRAM2 gotcha" below before changing this.
 - `vendor/CMSIS/` -- unmodified, official ST/ARM CMSIS core + STM32L4 device
   headers (register struct definitions only, no HAL driver code). Vendored
   from `STMicroelectronics/cmsis_device_l4` and `ARM-software/CMSIS_5`.
-- `src/main.c` -- bring-up test: blinks the Nucleo's user LED (LD2 / PA5) off
-  a SysTick millisecond counter. Confirms GPIO + SysTick + the whole
-  build/link chain work.
+- `src/main.c` -- bring-up test: blinks the Nucleo's user LED (LD2 / PA5) via
+  a busy-wait delay. Confirms GPIO + the whole build/link/flash chain work
+  on real hardware. (Uses a busy-wait rather than SysTick for now, purely to
+  keep this first test minimal -- switch to a SysTick-driven millisecond
+  counter as part of the next stage.)
 
-Build was verified end-to-end (`make all`) producing a correctly linked ELF:
-`.isr_vector` lands at `0x08000000`, the initial stack pointer decodes to
-`0x20020000` (= RAM origin + 128K, i.e. top of RAM, as expected), and the
-ELF entry point matches the vector table's `Reset_Handler` address exactly.
+Build verified end-to-end (`make all`): `.isr_vector` lands at `0x08000000`,
+the ELF entry point matches `Reset_Handler`'s address exactly. Flashed and
+verified on **three different physical Nucleo L476RG boards** via
+`make flash` (`device idcode = 0x10076415` -- STM32L47/L48xx Rev 4,
+`flash size = 1024 KiB`, `RDP level 0`, `Verified OK` on every flash).
 
-**Flashed to real hardware and confirmed via OpenOCD**: `make flash`
-programs and verifies successfully (`device idcode = 0x10076415` --
-STM32L47/L48xx Rev 4, `flash size = 1024 KiB`, `RDP level 0`), and the
-target halts at `pc: 0x08000454`, exactly `Reset_Handler`'s address. Still
-waiting on eyes-on confirmation that LD2 is actually blinking (the one thing
-OpenOCD's output can't prove) -- SysTick/GPIO working correctly on the real
-part is the last piece of stage 1.
+### The SRAM2 gotcha (read before touching RAM size)
+
+The very first version of this bring-up used the full 128K RAM (SRAM1 +
+SRAM2, matching the chip's datasheet total) and reproducibly HardFaulted on
+real hardware within its first few hundred instructions -- confirmed on a
+true cold power-on (no debugger attached) and reproduced identically across
+three separate physical boards, ruling out a damaged chip or a debug-session
+artifact. Reading the CPU's own fault-status registers (`CFSR`/`HFSR`)
+pinned it down precisely: `BFSR.STKERR` -- a bus fault while the hardware
+was pushing an exception frame *onto the stack itself*. The stack
+(`_estack`) was placed at the very top of the full 128K region, which lands
+inside SRAM2's `0x20018000`-`0x2001FFFF` alias -- and every fault's `msp`
+landed exactly there.
+
+Limiting the linker script to 96K (SRAM1 only, `_estack = 0x20018000`)
+fixed it completely -- confirmed via live register inspection (`CFSR`
+cleanly `0x00000000`, `RCC->AHB2ENR` correctly written, `GPIOA->ODR`
+observed toggling) and visually (LD2 blinking) on real hardware.
+
+**This was not root-caused further** -- it's unresolved *why* the SRAM2
+alias faults (missing enable step for this project, a documented erratum,
+or something else) -- just worked around by avoiding it. Practical
+implications for later stages:
+
+- Keep all RAM usage (stack, `.bss`, `.data`, any future buffers -- GPS
+  UBX/NMEA parse buffers, the capture engine's event ring buffer, etc.)
+  within the 96K SRAM1 budget until this is actually root-caused. 96K is
+  still generous for what this hub needs.
+- If SRAM2's extra 32K is ever needed, treat it as a research task first
+  (check RM0351 for any SRAM2-specific clock/enable requirements, check the
+  STM32L476 errata sheet), not just a matter of bumping the linker script's
+  `LENGTH` back to 128K.
 
 ## Building
 

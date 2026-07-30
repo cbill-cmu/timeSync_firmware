@@ -1,11 +1,22 @@
-/* Linker script for STM32L476RG (Nucleo-64): 1024K flash, 128K RAM. */
+/* Linker script for STM32L476RG (Nucleo-64): 1024K flash, 96K RAM.
+ *
+ * DIAGNOSTIC: intentionally using only SRAM1 (96K @ 0x20000000-0x20017FFF)
+ * here, NOT the full 128K (SRAM1 + SRAM2 aliased at 0x20018000-0x2001FFFF).
+ * Every HardFault seen in bring-up testing was a BusFault STKERR (fault
+ * while stacking an exception frame) with msp landing in the SRAM2-alias
+ * region, reproducible across three different physical boards -- testing
+ * whether avoiding that region entirely fixes it. If this works, either
+ * SRAM2 needs some enable step this project doesn't do yet, or its alias
+ * behaves differently than plain SRAM1 on this part; revisit before
+ * needing the extra 32K.
+ */
 
 ENTRY(Reset_Handler)
 
 MEMORY
 {
   FLASH (rx)  : ORIGIN = 0x08000000, LENGTH = 1024K
-  RAM   (rwx) : ORIGIN = 0x20000000, LENGTH = 128K
+  RAM   (rwx) : ORIGIN = 0x20000000, LENGTH = 96K
 }
 
 _estack = ORIGIN(RAM) + LENGTH(RAM);
