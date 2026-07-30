@@ -79,9 +79,34 @@ int main(void) {
 
   uart_puts(USART2, "\r\n[stm32-hub] USART1 (GPS) -> USART2 passthrough starting\r\n");
 
+  /* Repeating heartbeat, not just a one-shot boot banner -- so you can
+   * connect a terminal at any time (not just the instant of boot) and
+   * still get confirmation this firmware is alive and USART2 TX works,
+   * independent of whether the GPS is sending anything at all. */
+  uint32_t heartbeat_count = 0;
+  uint32_t idle_loops = 0;
   while (1) {
     if (uart_rx_ready(USART1)) {
       uart_putc(USART2, uart_getc(USART1));
+    }
+
+    idle_loops++;
+    if (idle_loops >= 400000U) { /* rough, uncalibrated -- roughly once/second */
+      idle_loops = 0;
+      heartbeat_count++;
+      uart_puts(USART2, "[stm32-hub] alive, waiting for GPS data... (");
+      /* tiny manual unsigned-to-decimal, no snprintf without libc */
+      char digits[11];
+      int i = 0;
+      uint32_t v = heartbeat_count;
+      do {
+        digits[i++] = (char)('0' + (v % 10U));
+        v /= 10U;
+      } while (v && i < 10);
+      while (i > 0) {
+        uart_putc(USART2, digits[--i]);
+      }
+      uart_puts(USART2, ")\r\n");
     }
   }
 }
