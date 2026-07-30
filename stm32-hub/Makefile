@@ -82,8 +82,14 @@ size: $(BINARY).elf
 	$(SIZE) $<
 
 # Requires OpenOCD on PATH (the same OpenOCD used for 18-349 works fine).
+# adapter speed 100: the default 500kHz reset/halt handshake reliably timed
+# out over usbipd-passed-through USB in WSL2 (added latency on a
+# timing-sensitive polling loop); 100kHz gives enough margin. If you're on
+# a native Linux host with the ST-LINK on real USB, the default speed may
+# work fine too, but there's no downside to leaving this slower.
 flash: $(BINARY).elf
 	openocd -f interface/stlink.cfg -f target/stm32l4x.cfg \
+	  -c "adapter speed 100" \
 	  -c "program $(BINARY).elf verify reset exit"
 
 clean:

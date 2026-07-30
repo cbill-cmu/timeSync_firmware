@@ -32,22 +32,34 @@ Build was verified end-to-end (`make all`) producing a correctly linked ELF:
 `.isr_vector` lands at `0x08000000`, the initial stack pointer decodes to
 `0x20020000` (= RAM origin + 128K, i.e. top of RAM, as expected), and the
 ELF entry point matches the vector table's `Reset_Handler` address exactly.
-**Not yet flashed to real hardware** -- that verification is still on you.
+
+**Flashed to real hardware and confirmed via OpenOCD**: `make flash`
+programs and verifies successfully (`device idcode = 0x10076415` --
+STM32L47/L48xx Rev 4, `flash size = 1024 KiB`, `RDP level 0`), and the
+target halts at `pc: 0x08000454`, exactly `Reset_Handler`'s address. Still
+waiting on eyes-on confirmation that LD2 is actually blinking (the one thing
+OpenOCD's output can't prove) -- SysTick/GPIO working correctly on the real
+part is the last piece of stage 1.
 
 ## Building
 
-Needs a **Windows-native or WSL-hosted** `arm-none-eabi-gcc` on `PATH` --
-note the toolchain tarball already in your 18-349 repo
-(`arm-gnu-toolchain-14.2.rel1-x86_64-arm-none-eabi.tar.xz`) is the
-**Linux-hosted** build and will not run directly on native Windows
-(`Exec format error` in Git Bash). Verification for this stage was done by
-extracting that same tarball inside WSL and building there. Either:
+Targets native Ubuntu (or any Linux host) -- needs `arm-none-eabi-gcc` on
+`PATH`. Two ways to get it:
 
-- install the Windows-hosted ARM GNU Toolchain
-  (`arm-gnu-toolchain-*-mingw-w64-i686-arm-none-eabi.exe` from
-  [developer.arm.com](https://developer.arm.com/downloads/-/arm-gnu-toolchain-downloads)),
-  or
-- build inside WSL, pointing `PATH` at the extracted Linux-hosted toolchain.
+- **apt (simplest):**
+  ```bash
+  sudo apt update
+  sudo apt install gcc-arm-none-eabi
+  ```
+- **The tarball already in your 18-349 repo**
+  (`arm-gnu-toolchain-14.2.rel1-x86_64-arm-none-eabi.tar.xz`) is the
+  Linux x86_64-hosted ARM GNU Toolchain build -- it runs natively on Ubuntu
+  (this is what was used to verify the build below; only Windows/Git-Bash
+  couldn't run it directly). Extract it and add its `bin/` to `PATH`:
+  ```bash
+  mkdir -p ~/opt && tar -xf arm-gnu-toolchain-14.2.rel1-x86_64-arm-none-eabi.tar.xz -C ~/opt
+  export PATH="$HOME/opt/arm-gnu-toolchain-14.2.rel1-x86_64-arm-none-eabi/bin:$PATH"
+  ```
 
 ```bash
 make            # build/stm32-hub.elf + .bin
@@ -58,12 +70,26 @@ make clean
 ## Flashing
 
 ```bash
-make flash      # openocd -f interface/stlink.cfg -f target/stm32l4x.cfg -c "program ... verify reset exit"
+sudo apt install openocd   # if not already installed (the 18-349 OpenOCD build also works)
+make flash                 # openocd -f interface/stlink.cfg -f target/stm32l4x.cfg -c "program ... verify reset exit"
 ```
 
-Requires `openocd` on `PATH` (the same one used for 18-349 works). The
-Nucleo's onboard ST-LINK handles both flashing and the debug UART -- no
+The Nucleo's onboard ST-LINK handles both flashing and the debug UART -- no
 external programmer needed.
+
+**USB permissions on Ubuntu:** if `make flash` fails with something like
+`libusb_open() failed` or `Access denied (insufficient permissions)`,
+OpenOCD can't open the ST-LINK's USB device as your regular user. Fix once,
+not per-flash:
+```bash
+# openocd's own package usually ships the udev rules already; if flashing
+# still fails after installing openocd, install them explicitly:
+sudo cp /usr/share/openocd/contrib/60-openocd.rules /etc/udev/rules.d/
+sudo udevadm control --reload-rules && sudo udevadm trigger
+```
+Then unplug/replug the board. As a quick one-off check (not a real fix),
+`sudo make flash` will also work if you just want to confirm the rest of
+the flow is fine.
 
 ## Next steps (in order -- each gets hardware-verified before the next)
 
