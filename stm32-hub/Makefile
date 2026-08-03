@@ -23,7 +23,7 @@ INCLUDES = -I$(CMSIS_CORE) -I$(CMSIS_DEVICE) -I$(SRC_DIR)
 
 # Application + vendor sources. Add a new .c file here (or drop it in
 # $(SRC_DIR)) when adding functionality -- no other Makefile changes needed.
-C_SRC_NAMES  = main.c system_stm32l4xx.c
+C_SRC_NAMES  = main.c uart.c gps.c timebase.c capture.c system_stm32l4xx.c
 ASM_SRC_NAME = startup_stm32l476rg.S
 
 OBJS = $(addprefix $(BUILD)/,$(C_SRC_NAMES:.c=.o)) $(BUILD)/$(ASM_SRC_NAME:.S=.o)

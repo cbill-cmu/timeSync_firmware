@@ -1,59 +1,103 @@
-/* main.c -- stage 2: GPS UART bring-up for the STM32L476RG time-sync hub.
+/* main.c -- STM32L476RG time-sync hub.
  *
- * Goal: prove the ublox EVK-7P is wired correctly and actually talking,
- * before writing a real NMEA/UBX parser. This is a dumb byte passthrough:
- * every byte received on USART1 (from the GPS) is immediately forwarded
- * out USART2 (the ST-LINK Virtual COM Port), so you can watch raw NMEA
- * sentences show up in a serial terminal on the host.
+ * Orchestrates the pieces described in ../docs/system-design.md:
+ *   uart.c      generic polling UART TX helpers
+ *   gps.c       USART1 RX ISR + NMEA 0183 sentence parser (GPS_BAUD, found
+ *               by sweeping candidates against this specific EVK-7P -- see
+ *               README.md's GPS bring-up section)
+ *   timebase.c  TIM2 free-running 1MHz tick counter, the master clock
+ *   capture.c   generic TIM2 input-capture ISR + ring buffer + sensor table
  *
- * No interrupts, no buffering, no LED -- deliberately minimal, matching
- * stage 1's philosophy of proving one thing at a time. See
- * ../docs/system-design.md and this folder's README for what comes next
- * (timebase, PPS capture, real parsing).
+ * USART2 (fixed at DEBUG_BAUD, the ST-LINK VCP) carries: the raw NMEA
+ * mirror from gps.c, a periodic parsed-fix summary, and any capture events
+ * (GPS PPS on TIM2_CH1/PA0, radar SYNC_OUT reserved on TIM2_CH2/PA1 --
+ * nothing else needs to change to wire the radar in, per system-design.md's
+ * extensibility contract).
  *
- * Wiring (see README.md's pin table for the full picture):
+ * Wiring:
  *   GPS TXD1 (module output) -> STM32 PA10 (USART1_RX)
- *   GPS RXD1 (module input)  <- STM32 PA9  (USART1_TX)   -- not used yet,
- *     wired now so UBX config commands can be added later without rewiring
+ *   GPS RXD1 (module input)  <- STM32 PA9  (USART1_TX)
  *   GPS GND                  -- common ground with the STM32, required
- * Confirm the EVK-7P's actual header pin numbering and I/O voltage against
- * its own manual/silkscreen before connecting -- see README.md.
- *
- * Watching the output: USART2 is the same USB cable used to flash (ST-LINK
- * VCP). While the ST-LINK is usbipd-attached to WSL, it will NOT show up
- * as a Windows COM port -- find its device node in WSL instead
- * (`ls /dev/ttyACM*`) and point a terminal (e.g. `../host/debug_console.py
- * --port /dev/ttyACM0 --baud 9600`, or `picocom /dev/ttyACM0 -b 9600`) at
- * it. ublox 7-series modules default to 9600 baud NMEA -- adjust BAUD below
- * if this module's been reconfigured.
+ *   GPS TIMEPULSE1 (if this EVK-7P revision has it wired to the test
+ *     connector -- older ones may not, see README.md) -> STM32 PA0
+ *   Radar SYNC_OUT (via level shifter, VIOIN is ~1.8V) -> STM32 PA1, once
+ *     wired -- not connected yet.
  */
 #include "stm32l4xx.h"
+#include "uart.h"
+#include "gps.h"
+#include "timebase.h"
+#include "capture.h"
 
-#define BAUD 9600U
+#define DEBUG_BAUD 115200U
+#define GPS_BAUD 115200U
 
-static void uart_init(USART_TypeDef *u, uint32_t baud) {
-  u->BRR = SystemCoreClock / baud;
-  u->CR1 = USART_CR1_TE | USART_CR1_RE | USART_CR1_UE;
-}
-
-static void uart_putc(USART_TypeDef *u, char c) {
-  while (!(u->ISR & USART_ISR_TXE)) {
+static void print_fixed7(USART_TypeDef *u, int32_t value_1e7) {
+  if (value_1e7 < 0) {
+    uart_putc(u, '-');
+    value_1e7 = -value_1e7;
   }
-  u->TDR = (uint8_t)c;
-}
-
-static void uart_puts(USART_TypeDef *u, const char *s) {
-  while (*s) {
-    uart_putc(u, *s++);
+  uint32_t v = (uint32_t)value_1e7;
+  uart_put_udec(u, v / 10000000U);
+  uart_putc(u, '.');
+  uint32_t frac = v % 10000000U;
+  uint32_t divisor = 1000000U;
+  while (divisor > 0U) {
+    uart_putc(u, (char)('0' + (frac / divisor) % 10U));
+    divisor /= 10U;
   }
 }
 
-static int uart_rx_ready(USART_TypeDef *u) {
-  return (u->ISR & USART_ISR_RXNE) != 0;
-}
 
-static char uart_getc(USART_TypeDef *u) {
-  return (char)(u->RDR & 0xFFU);
+static void print_fix_summary(USART_TypeDef *u) {
+  gps_fix_t fix;
+  gps_get_fix(&fix);
+
+  uart_puts(u, "[gps] fix=");
+  uart_puts(u, fix.fix_valid ? "YES" : "no");
+
+  uart_puts(u, " time=");
+  if (fix.has_time) {
+    uart_put_udec(u, fix.hh);
+    uart_putc(u, ':');
+    uart_put_udec(u, fix.mm);
+    uart_putc(u, ':');
+    uart_put_udec(u, fix.ss);
+  } else {
+    uart_puts(u, "--:--:--");
+  }
+
+  uart_puts(u, " date=");
+  if (fix.has_date) {
+    uart_put_udec(u, fix.year);
+    uart_putc(u, '-');
+    uart_put_udec(u, fix.month);
+    uart_putc(u, '-');
+    uart_put_udec(u, fix.day);
+  } else {
+    uart_puts(u, "----------");
+  }
+
+  uart_puts(u, " sats=");
+  if (fix.has_satellites) {
+    uart_put_udec(u, fix.satellites);
+  } else {
+    uart_puts(u, "--");
+  }
+
+  uart_puts(u, " lat=");
+  if (fix.has_position) {
+    print_fixed7(u, fix.lat_1e7);
+  } else {
+    uart_puts(u, "--");
+  }
+  uart_puts(u, " lon=");
+  if (fix.has_position) {
+    print_fixed7(u, fix.lon_1e7);
+  } else {
+    uart_puts(u, "--");
+  }
+  uart_puts(u, "\r\n");
 }
 
 int main(void) {
@@ -62,51 +106,68 @@ int main(void) {
   RCC->APB2ENR |= RCC_APB2ENR_USART1EN;
   (void)RCC->AHB2ENR; /* readback: ensure clocks are on before touching GPIOA/USARTs */
 
-  /* PA2/PA3 = USART2 (ST-LINK VCP, debug output). PA9/PA10 = USART1 (GPS).
-   * AF7 on all four -- alternate function mode (10), then AF selector 7. */
-  GPIOA->MODER &= ~(GPIO_MODER_MODE2_Msk | GPIO_MODER_MODE3_Msk |
-                     GPIO_MODER_MODE9_Msk | GPIO_MODER_MODE10_Msk);
-  GPIOA->MODER |= (0x2U << GPIO_MODER_MODE2_Pos) | (0x2U << GPIO_MODER_MODE3_Pos) |
-                  (0x2U << GPIO_MODER_MODE9_Pos) | (0x2U << GPIO_MODER_MODE10_Pos);
-
+  /* PA2/PA3 = USART2 (ST-LINK VCP, debug output), AF7. */
+  GPIOA->MODER &= ~(GPIO_MODER_MODE2_Msk | GPIO_MODER_MODE3_Msk);
+  GPIOA->MODER |= (0x2U << GPIO_MODER_MODE2_Pos) | (0x2U << GPIO_MODER_MODE3_Pos);
   GPIOA->AFR[0] &= ~(GPIO_AFRL_AFSEL2_Msk | GPIO_AFRL_AFSEL3_Msk);
   GPIOA->AFR[0] |= (7U << GPIO_AFRL_AFSEL2_Pos) | (7U << GPIO_AFRL_AFSEL3_Pos);
-  GPIOA->AFR[1] &= ~(GPIO_AFRH_AFSEL9_Msk | GPIO_AFRH_AFSEL10_Msk);
-  GPIOA->AFR[1] |= (7U << GPIO_AFRH_AFSEL9_Pos) | (7U << GPIO_AFRH_AFSEL10_Pos);
+  uart_init(USART2, DEBUG_BAUD);
 
-  uart_init(USART2, BAUD);
-  uart_init(USART1, BAUD);
+  gps_init(GPS_BAUD);
+  timebase_init();
+  capture_init();
+  __enable_irq();
 
-  uart_puts(USART2, "\r\n[stm32-hub] USART1 (GPS) -> USART2 passthrough starting\r\n");
+  uart_puts(USART2, "\r\n[stm32-hub] up -- GPS_BAUD=");
+  uart_put_udec(USART2, GPS_BAUD);
+  uart_puts(USART2, " DEBUG_BAUD=");
+  uart_put_udec(USART2, DEBUG_BAUD);
+  uart_puts(USART2, "\r\n");
 
-  /* Repeating heartbeat, not just a one-shot boot banner -- so you can
-   * connect a terminal at any time (not just the instant of boot) and
-   * still get confirmation this firmware is alive and USART2 TX works,
-   * independent of whether the GPS is sending anything at all. */
   uint32_t heartbeat_count = 0;
   uint32_t idle_loops = 0;
   while (1) {
-    if (uart_rx_ready(USART1)) {
-      uart_putc(USART2, uart_getc(USART1));
+    gps_service(USART2);
+
+    capture_event_t ev;
+    while (capture_pop(&ev)) {
+      uart_puts(USART2, "[capture] sensor=");
+      uart_puts(USART2, capture_sensor_name(ev.sensor_id));
+      uart_puts(USART2, " tick=");
+      uart_put_udec(USART2, (uint32_t)(ev.tick >> 32));
+      uart_putc(USART2, ':');
+      uart_put_udec(USART2, (uint32_t)ev.tick);
+      uart_puts(USART2, "\r\n");
     }
 
     idle_loops++;
     if (idle_loops >= 400000U) { /* rough, uncalibrated -- roughly once/second */
       idle_loops = 0;
       heartbeat_count++;
-      uart_puts(USART2, "[stm32-hub] alive, waiting for GPS data... (");
-      /* tiny manual unsigned-to-decimal, no snprintf without libc */
-      char digits[11];
-      int i = 0;
-      uint32_t v = heartbeat_count;
-      do {
-        digits[i++] = (char)('0' + (v % 10U));
-        v /= 10U;
-      } while (v && i < 10);
-      while (i > 0) {
-        uart_putc(USART2, digits[--i]);
-      }
-      uart_puts(USART2, ")\r\n");
+      uint64_t now = timebase_now64();
+      uart_puts(USART2, "[stm32-hub] alive (");
+      uart_put_udec(USART2, heartbeat_count);
+      uart_puts(USART2, "), tick=");
+      uart_put_udec(USART2, (uint32_t)(now >> 32));
+      uart_putc(USART2, ':');
+      uart_put_udec(USART2, (uint32_t)now);
+      uart_puts(USART2, " tim2_isr_entries=");
+      uart_put_udec(USART2, timebase_isr_entry_count());
+      uart_puts(USART2, ", USART1 bytes_seen=");
+      uart_put_udec(USART2, gps_bytes_seen());
+      uart_puts(USART2, " uart_errors=");
+      uart_put_udec(USART2, gps_uart_errors());
+      uart_puts(USART2, " rx_dropped=");
+      uart_put_udec(USART2, gps_rx_dropped());
+      uart_puts(USART2, " sentences=");
+      uart_put_udec(USART2, gps_sentences_seen());
+      uart_puts(USART2, " checksum_errors=");
+      uart_put_udec(USART2, gps_checksum_errors());
+      uart_puts(USART2, " capture_dropped=");
+      uart_put_udec(USART2, capture_dropped());
+      uart_puts(USART2, "\r\n");
+
+      print_fix_summary(USART2);
     }
   }
 }
