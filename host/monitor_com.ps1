@@ -1,7 +1,14 @@
-# Raw byte-level monitor for the STM32 hub's ST-LINK Virtual COM Port.
-# Prints every received byte as hex + ASCII (non-printable shown as '.'),
-# so framing/noise issues are visible even when ReadLine() would hide them.
-# Usage: powershell -ExecutionPolicy Bypass -File host\monitor_com.ps1
+# Monitor for the STM32 hub's ST-LINK Virtual COM Port.
+# Default: prints clean readable text (NMEA sentences, [gps]/[stm32-hub]
+# status lines) as it streams in. Pass -Raw for a hex+ASCII byte dump
+# instead (useful for diagnosing framing/noise issues, since it shows
+# exactly what arrived in each Read() call rather than reassembled lines).
+# Usage: powershell -ExecutionPolicy Bypass -File host\monitor_com.ps1 [-Raw] [-Seconds 20]
+
+param(
+    [switch]$Raw,
+    [int]$Seconds = 20
+)
 
 $dev = Get-CimInstance -Class Win32_PnPEntity | Where-Object { $_.Name -match 'STLink Virtual COM Port \((COM\d+)\)' }
 if (-not $dev) {
@@ -18,8 +25,8 @@ Write-Output "Using $portName -- press NRST on the STM32 now"
 $port = $null
 $buf = New-Object byte[] 256
 $sw = [Diagnostics.Stopwatch]::StartNew()
-Write-Output "Listening for 20 seconds..."
-while ($sw.Elapsed.TotalSeconds -lt 20) {
+Write-Output "Listening for $Seconds seconds..."
+while ($sw.Elapsed.TotalSeconds -lt $Seconds) {
     if (-not $port -or -not $port.IsOpen) {
         try {
             if ($port) { $port.Dispose() }
@@ -35,10 +42,15 @@ while ($sw.Elapsed.TotalSeconds -lt 20) {
     try {
         $n = $port.Read($buf, 0, $buf.Length)
         if ($n -gt 0) {
-            $hex = ($buf[0..($n-1)] | ForEach-Object { $_.ToString("X2") }) -join ' '
-            $ascii = -join ($buf[0..($n-1)] | ForEach-Object { if ($_ -ge 32 -and $_ -le 126) { [char]$_ } else { '.' } })
-            "{0:HH:mm:ss.fff} [{1} bytes] HEX: {2}" -f (Get-Date), $n, $hex
-            "                      ASCII: {0}" -f $ascii
+            if ($Raw) {
+                $hex = ($buf[0..($n-1)] | ForEach-Object { $_.ToString("X2") }) -join ' '
+                $ascii = -join ($buf[0..($n-1)] | ForEach-Object { if ($_ -ge 32 -and $_ -le 126) { [char]$_ } else { '.' } })
+                "{0:HH:mm:ss.fff} [{1} bytes] HEX: {2}" -f (Get-Date), $n, $hex
+                "                      ASCII: {0}" -f $ascii
+            } else {
+                $text = -join ($buf[0..($n-1)] | ForEach-Object { if (($_ -ge 32 -and $_ -le 126) -or $_ -eq 13 -or $_ -eq 10) { [char]$_ } else { '.' } })
+                Write-Host -NoNewline $text
+            }
         }
     } catch [System.TimeoutException] {
     } catch {
@@ -47,4 +59,4 @@ while ($sw.Elapsed.TotalSeconds -lt 20) {
     }
 }
 if ($port -and $port.IsOpen) { $port.Close() }
-Write-Output "Done."
+Write-Output "`nDone."

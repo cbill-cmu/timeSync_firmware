@@ -32,10 +32,10 @@ typedef struct {
 void gps_init(uint32_t baud);
 
 /* Drains whatever USART1 has received since the last call: feeds bytes
- * into the NMEA sentence assembler/parser, and if raw_echo_uart is
- * non-NULL, also forwards each raw byte there (e.g. USART2) so you can
- * watch unparsed sentences in a terminal. Call every main loop iteration. */
-void gps_service(USART_TypeDef *raw_echo_uart);
+ * into the NMEA sentence assembler/parser, and echoes each raw byte to the
+ * buffered debug UART (debug_uart.h) so you can watch unparsed sentences
+ * in a terminal. Call every main loop iteration. */
+void gps_service(void);
 
 /* Returns 1 and clears the flag if fix/time/date/position changed since
  * the last call to gps_fix_updated() or gps_get_fix(); 0 otherwise. */

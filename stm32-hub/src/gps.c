@@ -1,5 +1,6 @@
 #include "gps.h"
 #include "uart.h"
+#include "debug_uart.h"
 #include <stddef.h>
 
 /* ---- USART1 RX: ISR fills a ring buffer, gps_service() drains it ---- */
@@ -272,15 +273,17 @@ static void process_line(void) {
     return;
   }
 
-  /* line_buf[1..2] = talker ID (GP/GN/GL/...), [3..5] = sentence type --
-   * match on type only so we're agnostic to which talker ID this module
-   * (or a future one) uses. */
-  if (line_len >= 6) {
+  /* line_buf[1..2] = talker ID (GP/GN/GL/...), [3..5] = sentence type,
+   * [6] = the comma right after the type -- field 0 starts at [7], not
+   * [6], so nth_field()'s "field 0" call actually lands on real content
+   * instead of the comma itself. Match on type only so we're agnostic to
+   * which talker ID this module (or a future one) uses. */
+  if (line_len >= 7) {
     const char *type = &line_buf[3];
     if (type[0] == 'R' && type[1] == 'M' && type[2] == 'C') {
-      parse_rmc(&line_buf[6]);
+      parse_rmc(&line_buf[7]);
     } else if (type[0] == 'G' && type[1] == 'G' && type[2] == 'A') {
-      parse_gga(&line_buf[6]);
+      parse_gga(&line_buf[7]);
     }
   }
 }
@@ -313,13 +316,11 @@ static void assemble_byte(uint8_t c) {
   line_buf[line_len++] = (char)c;
 }
 
-void gps_service(USART_TypeDef *raw_echo_uart) {
+void gps_service(void) {
   while (rx_tail != rx_head) {
     uint8_t c = rx_buf[rx_tail];
     rx_tail = (rx_tail + 1U) % GPS_RX_BUF_SIZE;
-    if (raw_echo_uart) {
-      uart_putc(raw_echo_uart, (char)c);
-    }
+    debug_putc((char)c);
     assemble_byte(c);
   }
 }

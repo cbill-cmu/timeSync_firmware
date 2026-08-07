@@ -10,5 +10,7 @@ void uart_init(USART_TypeDef *u, uint32_t baud);
 void uart_putc(USART_TypeDef *u, char c);
 void uart_puts(USART_TypeDef *u, const char *s);
 void uart_put_udec(USART_TypeDef *u, uint32_t v);
+void uart_put_udec64(USART_TypeDef *u, uint64_t v);
+void uart_put_sdec64(USART_TypeDef *u, int64_t v);
 
 #endif

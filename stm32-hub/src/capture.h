@@ -10,16 +10,18 @@
 
 /* NOTE on pin assignment: system-design.md's original diagram put PPS/radar
  * /camera on TIM2 CH1-4 = PA0-PA3. PA2/PA3 are already committed to USART2
- * (ST-LINK VCP, our only debug output) -- can't reuse them. CH1 (PA0) and
- * CH2 (PA1) are still free and used below; CH3/CH4 (camera, sensor #4+)
- * will need different pins when that sensor is actually added. */
+ * (ST-LINK VCP, our only debug output) -- can't reuse them. CH1 (PA0), CH2
+ * (PA1), and CH3 (PB10) are used below; CH4 (sensor #4+) still needs a pin
+ * assigned when that sensor is actually added. */
 enum {
-  SENSOR_GPS_PPS = 0,   /* TIM2_CH1 / PA0 -- GPS TIMEPULSE1, if this EVK
-                          revision has it wired to the test connector at
-                          all (older EVK-7 boards may not -- see README) */
-  SENSOR_RADAR_SYNC = 1, /* TIM2_CH2 / PA1 -- reserved for the radar's
+  SENSOR_GPS_PPS = 0,     /* TIM2_CH1 / PA0 -- GPS TIMEPULSE1. Confirmed
+                            working with a PPS-capable module (EVK-M8T);
+                            the original EVK-7P board didn't expose it. */
+  SENSOR_RADAR_SYNC = 1,  /* TIM2_CH2 / PA1 -- reserved for the radar's
                             SYNC_OUT once the level shifter is wired in.
                             Nothing else needs to change to add it. */
+  SENSOR_CAMERA_SYNC = 2, /* TIM2_CH3 / PB10 -- reserved for the ZED
+                            camera's SYNC_OUT once wired in. */
   SENSOR_COUNT
 };
 

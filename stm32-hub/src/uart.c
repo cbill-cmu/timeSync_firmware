@@ -28,3 +28,23 @@ void uart_put_udec(USART_TypeDef *u, uint32_t v) {
     uart_putc(u, digits[--i]);
   }
 }
+
+void uart_put_udec64(USART_TypeDef *u, uint64_t v) {
+  char digits[21];
+  int i = 0;
+  do {
+    digits[i++] = (char)('0' + (uint32_t)(v % 10U));
+    v /= 10U;
+  } while (v && i < 20);
+  while (i > 0) {
+    uart_putc(u, digits[--i]);
+  }
+}
+
+void uart_put_sdec64(USART_TypeDef *u, int64_t v) {
+  if (v < 0) {
+    uart_putc(u, '-');
+    v = -v;
+  }
+  uart_put_udec64(u, (uint64_t)v);
+}

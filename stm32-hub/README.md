@@ -7,23 +7,57 @@ with a plain Makefile (no IDE required).
 
 ## Status
 
-**Stages 1-3 are done and confirmed working on real hardware**: LD2 blinks,
-the ublox EVK-7P GPS module is talking over UART and its NMEA sentences
-parse cleanly (zero checksum errors across sustained multi-minute runs), and
-the TIM2 free-running timebase + generic capture-ISR scaffolding from
-`../docs/system-design.md` is in place and correct. Source layout:
+**Everything through 3-channel PPS-anchored hardware capture is done and
+confirmed working end-to-end on real hardware.** Current setup: an EVK-M8T
+GPS module (swapped in from the original EVK-7P specifically because it
+exposes a real `TIMEPULSE1` pin -- see "GPS wiring" below) provides both a
+full 3D fix (position/time/date all parsing correctly) and a working PPS
+anchor (`pps_anchor=YES`, capture events firing at 1Hz with computed
+`utc_ns`). A waveform generator standing in for the radar/camera confirmed
+the whole pipeline -- capture, PPS anchoring, zero data loss, zero spurious
+edges -- against a real 30Hz signal (see "Debug UART TX bottleneck" and
+"Input capture bounce filter" below for the two real bugs this exposed and
+fixed). `../docs/system-design.md`'s TIM2 free-running timebase + generic
+capture-ISR architecture is fully in place. Source layout:
 
-- `src/uart.c`/`.h` -- polling UART TX helpers (`uart_init`/`uart_putc`/
-  `uart_puts`/`uart_put_udec`), shared by `main.c` and `gps.c`.
+- `src/uart.c`/`.h` -- generic blocking UART TX helpers (`uart_init`/
+  `uart_putc`/`uart_puts`/`uart_put_udec`), used internally by
+  `debug_uart.c` and `gps.c` for peripheral setup.
+- `src/debug_uart.c`/`.h` -- buffered, `TXE`-interrupt-driven USART2 (ST-LINK
+  VCP) TX. Owns PA2/PA3 setup. See "Debug UART TX bottleneck" below for why
+  a plain blocking `uart_putc()` wasn't enough once a 3rd capture channel
+  and continuous GPS mirroring were both writing to the same link.
 - `src/gps.c`/`.h` -- USART1 RX ISR (ring buffer) + NMEA 0183 sentence
   assembler/checksum validator/field parser (`$GPRMC`, `$GPGGA`), talker-ID
-  agnostic (matches on sentence type, not the `GP`/`GN`/... prefix).
+  agnostic (matches on sentence type, not the `GP`/`GN`/... prefix --
+  confirmed working against both plain `$GP*` and combined `$GN*`/`$GL*`
+  GNSS sentences).
 - `src/timebase.c`/`.h` -- TIM2 as a free-running 1MHz/32-bit tick counter,
   software-extended to 64 bits via the update-interrupt high word.
 - `src/capture.c`/`.h` -- generic TIM2 input-capture ISR + ring buffer +
-  `sensor_table[]`, per system-design.md's extensibility contract.
+  `sensor_table[]`, per system-design.md's extensibility contract. Three
+  live channels: `gps_pps` (`PA0`), `radar_sync` (`PA1`), `camera_sync`
+  (`PB10`). Includes a digital noise filter (`ICxF`) on all three channels
+  -- see "Input capture bounce filter" below.
+- `src/timesync.c`/`.h` -- PPS-anchored tick&rarr;UTC mapping: pairs a
+  `SENSOR_GPS_PPS` capture event's tick with the UTC second the next parsed
+  GPS time update reports, then converts any tick to UTC nanoseconds via
+  that linear anchor. **Confirmed working against a real PPS-capable
+  module** (`pps_anchor=YES`, sustained over multi-minute runs).
 - `src/main.c` -- orchestrates the above; periodic status heartbeat over
-  USART2 with GPS/capture/timebase counters and the latest parsed fix.
+  USART2 with GPS/capture/timebase/anchor counters and the latest parsed
+  fix.
+- `../host/stm32_logger.py` -- host-side auto-reconnecting logger; parses
+  tick-bearing lines and logs one CSV row per event: the sensor edge's own
+  UTC time, the nearest real PPS second boundary's UTC time, and the
+  difference between them (`offset_from_pps_ms`) -- tagged `stm32_pps`
+  (hardware-anchored, trustworthy) or `host_ntp_fallback` (host wall-clock,
+  tens-of-ms jitter). See "Running the full pipeline" below for the exact
+  commands and what each column means.
+- `../host/pps_offset_stats.py` -- reads a `stm32_logger.py` CSV and
+  reports, per sensor, the offset-from-PPS-edge and inter-event-spacing
+  statistics (mean/stddev/min/max). This is the direct "how far was the
+  radar/camera from the nearest PPS edge, with statistics" tool.
 
 Stage 1 (bring-up) exists purely to prove the toolchain, vector table,
 linker script, and flash flow are correct before any interrupt-driven timing
@@ -85,19 +119,25 @@ implications for later stages:
   STM32L476 errata sheet), not just a matter of bumping the linker script's
   `LENGTH` back to 128K.
 
-### GPS baud: 115200, not the documented 9600 default
+### GPS baud: check it per module, don't assume
 
-The u-blox 7-series NMEA default is 9600 baud, but *this specific EVK-7P
-module* only decodes cleanly at **115200** -- confirmed by sweeping USART1
-through {9600, 4800, 19200, 38400, 57600, 115200} while watching for
-readable NMEA structure. At every rate except 115200 the module produced
-well-timed (~once/sec, matching real NMEA cadence), but 100%-corrupted
-traffic -- consistent with correct wiring/electrical connection but wrong
-baud, not a hardware fault. Likely explanation: a previous test/config
-session changed it via u-center, and the EVK's backup battery retained the
-setting across power cycles. `GPS_BAUD` in `main.c` is hardcoded to 115200;
-if you swap in a different/factory-reset module, re-run the sweep before
-assuming this value still applies.
+`GPS_BAUD` in `main.c` is currently **9600** -- the EVK-M8T (in current use,
+see "GPS wiring" below) decodes cleanly at its documented default, no
+surprises. This was NOT true of the original EVK-7P: despite 9600 being the
+documented u-blox 7-series NMEA default, that specific module only decoded
+cleanly at **115200** -- confirmed by sweeping USART1 through {9600, 4800,
+19200, 38400, 57600, 115200} while watching for readable NMEA structure. At
+every rate except 115200 that module produced well-timed (~once/sec,
+matching real NMEA cadence) but 100%-corrupted traffic -- consistent with
+correct wiring/electrical connection but wrong baud, not a hardware fault.
+Likely explanation: a previous test/config session changed it via
+u-center, and the EVK's backup battery retained the setting across power
+cycles.
+
+**Takeaway: if you swap GPS modules, re-run this sweep rather than assuming
+either the documented default or whatever's currently in `main.c` still
+applies.** A module's actual configured baud isn't always its
+documented/factory default.
 
 ### The TIM2 forced-update race (read before touching `timebase_init()`)
 
@@ -124,6 +164,67 @@ Fix: poll `TIM2->SR & TIM_SR_UIF` until the hardware actually confirms the
 forced update happened, *then* clear it, *then* enable the interrupt --
 eliminating the race instead of guessing at a delay. See the comment in
 `timebase_init()`.
+
+### The NMEA field-offset bug (why fixes silently parsed as "no fix")
+
+Early testing showed the raw NMEA mirror streaming perfectly (`checksum_errors=0`
+throughout) while the parsed `[gps]` summary line insisted `fix=no
+time=--:--:-- lat=-- lon=--` no matter what -- including once a real
+satellite fix was live and the raw `$GPRMC`/`$GPGGA` sentences clearly
+showed `A`/quality `1` and valid coordinates. `gps.c`'s sentence dispatch
+was calling `parse_rmc(&line_buf[6])`/`parse_gga(&line_buf[6])`, but index 6
+is the comma right after `GPRMC`/`GPGGA` (`$GPRMC` occupies indices 0-5) --
+field 0 actually starts at index 7. `nth_field(body, 0)` on the
+off-by-one body pointer returned the leading comma itself, which
+`field_empty()` correctly (but uselessly) sees as always-empty; every other
+field index was shifted the same way, so e.g. the "satellites" field
+(index 6) was actually reading fix-quality's single digit. Fixed by
+starting both parsers at `&line_buf[7]`. Confirmed against a real live fix
+after the fix: `fix=YES time=21:18:13 date=2026-08-06 sats=11
+lat=40.4442073 lon=-79.9474663`, matching the raw NMEA exactly.
+
+### Debug UART TX bottleneck (why events and GPS bytes were silently dropped)
+
+Once a 3rd capture channel (`camera_sync`, driven by a waveform generator at
+~44Hz including bounce artifacts -- see below) was added on top of the
+continuous GPS NMEA mirror, live testing showed real data loss:
+`capture_dropped=3154` and `rx_dropped=590` (with `checksum_errors=18`)
+over a 60-second run. Root cause: every debug-output consumer (raw NMEA
+mirror, capture-event lines, heartbeat) funneled through blocking,
+byte-at-a-time `uart_putc()` calls on USART2 -- printing one capture-event
+line took ~6.5ms at 115200 baud, and with events arriving faster than that
+during bursts, the main loop stalled long enough for both the GPS RX ring
+buffer (`gps.c`) and the capture ring buffer (`capture.c`) to overflow.
+Critically, the *timestamp precision itself* wasn't affected (the capture
+ISR still latches the exact tick before anything gets queued for
+printing) -- whole events were being discarded outright, not recorded with
+a wrong time.
+
+Fix: `debug_uart.c` replaces direct USART2 writes with a 2048-byte RAM ring
+buffer drained by a `TXE`-interrupt handler in the background, so
+`debug_putc()` returns almost immediately instead of blocking on the wire.
+Confirmed fixed against the same load that caused the drops:
+`capture_dropped=0 rx_dropped=0 checksum_errors=0` sustained over a 60s run.
+
+### Input capture bounce filter (why ~32% of camera_sync edges were fake)
+
+With `debug_uart.c` fixed and a clean 30Hz/50%-duty square wave from a
+waveform generator wired to `PB10`, inter-event tick-delta analysis showed
+a real 30Hz peak (`~33,500` ticks apart, matching expectations) *plus* a
+second cluster of spurious near-simultaneous captures (`<5000` ticks apart)
+making up 31.8% of all detected edges -- consistent with signal
+bounce/ringing crossing the logic threshold twice per real edge, not a
+firmware bug.
+
+Fix: enabled TIM2's built-in input capture digital filter (`ICxF` in
+`CCMR1`/`CCMR2`) on all three channels, code `0b0011` = `fSAMPLING=fCK_INT,
+N=8` (~2us debounce at this chip's ~4MHz `fCK_INT`) -- verified against the
+STM32L4 reference manual (RM0351, `TIMx_CCMR1`/`TIMx_CCMR2` register
+description) rather than assumed from memory. Confirmed fixed: re-running
+the same 30Hz test afterward showed a single clean peak with **inter-event
+spacing stddev collapsing from 15,551.6 ticks (68% relative jitter) to 6.3
+ticks (0.02%)**, all 1,764 events landing in a 38-tick-wide band around the
+true period, zero spurious edges.
 
 ## Building
 
@@ -178,43 +279,46 @@ the flow is fine.
 ## Next steps (in order -- each gets hardware-verified before the next)
 
 1. ~~**GPS bring-up**~~ -- done. USART1 RX is interrupt-driven, NMEA
-   sentences parse and checksum-validate cleanly at 115200 baud.
+   sentences parse and checksum-validate cleanly.
 2. ~~**Timebase**~~ -- done. TIM2 free-running 1MHz/32-bit tick, 64-bit
    software extension, verified correct (see the forced-update race note
    above).
-3. ~~**Generic capture scaffolding**~~ -- done. TIM2 CH1 (`PA0`, GPS PPS)
-   and CH2 (`PA1`, reserved for radar `SYNC_OUT`) are both configured and
-   ISR-driven; adding radar means wiring its (level-shifted) `SYNC_OUT` to
-   `PA1` and nothing else, per system-design.md's extensibility contract.
-   No real capture events observed yet on either channel, which is expected
-   -- GPS PPS needs a fix first (see below) and radar isn't wired in yet.
-4. **GPS PPS capture + UTC anchoring**: blocked on confirming whether this
-   EVK-7P revision's `TIMEPULSE1` is actually wired to the test connector at
-   all (older EVK-7 boards may not be -- see the GPS wiring section below),
-   and on getting an actual satellite fix to verify PPS timing against.
-   Until then, `capture.c`'s GPS_PPS channel is wired and ready but
-   untested with real edges.
-5. **Radar SYNC_OUT wiring**: connect via the level shifter (radar's
+3. ~~**Generic capture scaffolding**~~ -- done. All three channels (`gps_pps`
+   on `PA0`, `radar_sync` on `PA1`, `camera_sync` on `PB10`) configured and
+   ISR-driven, per system-design.md's extensibility contract.
+4. ~~**GPS PPS capture + UTC anchoring**~~ -- done and **confirmed working**.
+   The original EVK-7P board couldn't do this (its silkscreen reads
+   `RESERVED0`, not `TIMEPULSE1` -- the time pulse signal isn't routed to
+   its test connector at all); swapping to an EVK-M8T (which does expose
+   `TIMEPULSE1`) fixed this permanently. `pps_anchor=YES`, capture events
+   firing at 1Hz with correct `utc_ns`, sustained over multi-minute runs.
+   See "GPS wiring" below for the EVK-M8T pinout.
+5. ~~**Camera channel bench test**~~ -- done. A waveform generator (30Hz,
+   50% duty, 3.3V/0V square wave) wired to `PB10` confirmed the full
+   capture -> PPS-anchor -> UTC pipeline end to end: 1,764 clean edges over
+   60s, zero drops, zero spurious captures (see the two bug writeups
+   above). This is the same path radar/camera will use once wired in.
+6. **Radar SYNC_OUT wiring**: connect via the level shifter (radar's
    `VIOIN` rail is ~1.8V, see `../radar_firmware/README.md`) to `PA1` once
-   available -- this is the first real test of the capture path's
-   sensor-agnosticism.
-6. **Bench test channel(s)**: PB10/PB11 (TIM2_CH3/CH4) reserved for
-   waveform-generator testing or the camera strobe -- not wired into
-   `capture.c`'s `sensor_table[]` yet.
-7. **Binary streaming format**: framed `seq, sensor_id, tick64, utc_ns,
+   available. Firmware side needs no changes -- same channel, same code
+   path already proven with the waveform generator.
+7. **Camera SYNC_OUT wiring**: connect the real ZED camera's strobe/trigger
+   output to `PB10` once available, replacing the waveform generator stand-in.
+8. **Binary streaming format**: framed `seq, sensor_id, tick64, utc_ns,
    flags` records per system-design.md, replacing the current
-   human-readable heartbeat/capture text once there's real UTC-anchored
-   data worth framing.
+   human-readable heartbeat/capture text -- worth doing once there's a real
+   consumer (e.g. the Jetson) parsing the stream programmatically rather
+   than a human reading it live.
 
 ## Pin plan
 
 | Signal | Pin | Peripheral | Notes |
 |---|---|---|---|
-| GPS UART TX (STM32&rarr;GPS RXD1) | PA9 | USART1_TX | Nucleo-64 CN10 `D8`; GPS_BAUD=115200 (see above, not the 9600 default) |
+| GPS UART TX (STM32&rarr;GPS RXD1) | PA9 | USART1_TX | Nucleo-64 CN10 `D8`; GPS_BAUD=9600 (EVK-M8T's documented default -- was 115200 for the old EVK-7P, a different physical module) |
 | GPS UART RX (STM32&larr;GPS TXD1) | PA10 | USART1_RX | Nucleo-64 CN10 `D2` |
-| GPS PPS (timepulse) | PA0 | TIM2_CH1 (input capture) | Nucleo-64 CN8 `A0`; `SENSOR_GPS_PPS` in `capture.h` -- wired + ISR-ready, no edges seen yet (needs a fix, and confirmation this EVK-7P revision exposes `TIMEPULSE1` at all) |
+| GPS PPS (timepulse) | PA0 | TIM2_CH1 (input capture) | Nucleo-64 CN8 `A0`; `SENSOR_GPS_PPS` in `capture.h` -- **confirmed working** with the EVK-M8T (pin 8 = real `TIMEPULSE 1`, unlike the EVK-7P's `RESERVED0`). `pps_anchor=YES`, capture events firing at 1Hz with `utc_ns` populated. |
 | Radar `SYNC_OUT` (via level shifter) | PA1 | TIM2_CH2 (input capture) | Nucleo-64 CN8 `A1`; `SENSOR_RADAR_SYNC` in `capture.h` -- wired + ISR-ready, not physically connected yet |
-| Bench test channel / spare (camera later) | PB10 | TIM2_CH3 (input capture) | Nucleo-64 CN10 `D6`; not yet added to `capture.c`'s `sensor_table[]` |
+| Camera `SYNC_OUT` (ZED) | PB10 | TIM2_CH3 (input capture) | Nucleo-64 CN10 `D6`; `SENSOR_CAMERA_SYNC` in `capture.h` -- **confirmed working**, bench-tested with a waveform generator (30Hz square wave) standing in for the real camera: 1,764 clean events over 60s, zero drops, zero spurious edges. Wire the real camera's `SYNC_OUT` here to replace the stand-in. |
 | Spare | PB11 | TIM2_CH4 (input capture) | Nucleo-64 CN10 `D3`; not yet added to `capture.c`'s `sensor_table[]` |
 | Event stream out | PA2/PA3 | USART2 (ST-LINK VCP) | No extra wiring -- same USB cable as flashing; DEBUG_BAUD=115200 |
 | User LED (bring-up test) | PA5 | GPIO output | Onboard `LD2` |
@@ -226,33 +330,164 @@ pinout diagram for your specific board revision before wiring, since a few
 Nucleo pins are reconfigurable via solder-bridge jumpers and could
 theoretically be repurposed on a given board.
 
-### GPS (ublox EVK-7P) wiring
+### GPS (ublox EVK-M8T) wiring -- current board, PPS confirmed working
 
-Confirmed against the official **u-blox EVK-7/8/M8 User Guide (UBX-14002502)**,
-saved at [`../docs/reference/evk78m8_userguide.pdf`](../docs/reference/evk78m8_userguide.pdf)
--- this board does *not* have separate `TXD1`/`RXD1`-labeled pins; it has a
-14-pin test connector (numbered right-to-left on the front panel) with a
-slide switch multiplexing pins 2/3 between UART and SPI:
+**Quick answer**: pin 3 (`TxD / MISO`) &rarr; STM32 `PA10`. Pin 2
+(`RxD / MOSI`) &rarr; STM32 `PA9`. Pin 8 (`TIMEPULSE 1`) &rarr; STM32 `PA0`.
+Slide switch must be in the **I2C** position (not SPI) for pins 2/3 to
+actually carry UART TxD/RxD instead of SPI MISO/MOSI.
+
+Confirmed against the official **EVK-M8T User Guide (UBX-14041540)** --
+same 14-pin test connector layout (numbered right-to-left on the front
+panel) as the EVK-7/8/M8 family, but with **real, working `TIMEPULSE 1` and
+`TIMEPULSE 2` signals** where the EVK-7P had `RESERVED0`/`RESERVED1` (see
+below):
 
 | Pin | Label | Wire to |
 |---|---|---|
 | 14 | `V5_IN` | STM32 5V |
 | 13 / 1 | `GND` | STM32 GND (both are ground; either works) |
+| 8 | `TIMEPULSE 1` | STM32 `PA0` (TIM2_CH1) -- **confirmed working**, `pps_anchor=YES` |
 | 3 | `TxD / MISO` | STM32 `PA10` (USART1_RX) -- module output |
 | 2 | `RxD / MOSI` | STM32 `PA9` (USART1_TX) -- module input |
-| 8 | `TIMEPULSE1` | STM32 `PA0`, **if present** -- see caveat below |
 
 **Slide switch must be in the I2C position**, not SPI -- in the SPI
 position, pins 2/3 carry SPI `MISO`/`MOSI` instead of UART, and the module
-stops responding on the 14-pin connector's UART entirely (confirmed: this
-was the actual root cause of an earlier "GPS sends nothing" session --
-nothing wrong with the wiring itself, the switch was in the wrong position).
+stops responding on the 14-pin connector's UART entirely.
 
-**`TIMEPULSE1` caveat**: only present on the test connector on newer
-EVK-8N/EVK-M8 revisions. Older EVK-7 boards may not expose it at all -- the
-label would read `RESERVED0` instead if so. Check your board's silkscreen
-before wiring `PA0`; if it says `RESERVED0`, PPS-based UTC anchoring isn't
-possible with this particular board without a hardware mod.
+GPS_BAUD is **9600** for this module (its documented default -- see "GPS
+baud" above). Power each board from its own supply/USB; only tie grounds
+together unless the manual explicitly says otherwise.
 
-Power each board from its own supply/USB; only tie grounds together unless
-the manual explicitly says otherwise.
+### GPS (ublox EVK-7P) wiring -- original board, no PPS, kept for reference
+
+The original board used for this project's early GPS bring-up. Its UART
+wiring is otherwise identical to the EVK-M8T above (pin 3 &rarr; `PA10`,
+pin 2 &rarr; `PA9`, same I2C-not-SPI switch requirement), but confirmed
+against the official **u-blox EVK-7/8/M8 User Guide (UBX-14002502)**, saved
+at [`../docs/reference/evk78m8_userguide.pdf`](../docs/reference/evk78m8_userguide.pdf):
+
+**`TIMEPULSE1` caveat -- CONFIRMED NOT AVAILABLE on this board.** Checked
+the silkscreen: pin 8 reads `RESERVED0`, not `TIMEPULSE1`. Per the user
+guide, older EVK-7 revisions don't route the time pulse signal to the test
+connector at all -- it's still generated internally (drives the
+front-panel LED's 1Hz blink once locked), just not accessible from any
+pin. **PPS-based UTC anchoring is not possible with this physical board**
+without a hardware modification (e.g. tapping the LED's own PCB trace/via
+directly -- untested, not attempted, real risk of board damage). This is
+the reason the project switched to the EVK-M8T above. GPS_BAUD for this
+specific module was **115200**, not its documented 9600 default -- see
+"GPS baud" above.
+
+## Running the full pipeline: wiring + every command
+
+End-to-end walkthrough: wire everything up, build, flash, watch it live,
+log to CSV with UTC timestamps, and compute PPS-offset statistics. This is
+the exact sequence used to validate the 3-channel capture pipeline against
+a waveform generator (see the two bug writeups above).
+
+### 1. Wiring
+
+| Signal | Board pin | STM32 pin |
+|---|---|---|
+| GPS TxD (module output) | EVK-M8T pin 3 | `PA10` |
+| GPS RxD (module input) | EVK-M8T pin 2 | `PA9` |
+| GPS TIMEPULSE 1 | EVK-M8T pin 8 | `PA0` |
+| GPS GND | EVK-M8T pin 13 or 1 | STM32 `GND` |
+| GPS power | EVK-M8T pin 14 (`V5_IN`) | STM32 `5V` |
+| Radar `SYNC_OUT` (via level shifter) | -- | `PA1` |
+| Camera `SYNC_OUT` (or a waveform generator standing in for it) | -- | `PB10` |
+| Flash + debug console | -- | USB cable into the Nucleo's ST-LINK port (no extra wiring) |
+
+Double-check the EVK-M8T's slide switch is in the **I2C** position (not
+SPI) -- see "GPS wiring" above. Power the GPS module and STM32 from
+separate supplies/USB ports; only tie grounds together.
+
+### 2. Build and flash
+
+Needs `arm-none-eabi-gcc` and `openocd` on `PATH` -- see "Building"/
+"Flashing" above for how to get them. If your ST-LINK is behind WSL2 (this
+project's actual dev setup), attach it first:
+```powershell
+# Windows PowerShell, one-time per session (or after replugging the board)
+usbipd list                        # find the busid, e.g. 2-2
+usbipd attach --wsl --busid 2-2
+```
+Then build and flash from the Linux side:
+```bash
+cd stm32-hub
+make            # build/stm32-hub.elf + .bin
+make flash      # openocd program + verify + reset
+```
+If you're on native Linux with the ST-LINK directly attached, skip the
+`usbipd` step -- `make flash` alone is enough.
+
+Detach from WSL afterward so the ST-LINK's virtual COM port becomes
+visible to Windows tools (`monitor_com.ps1`, `stm32_logger.py` if you run
+it against a Windows COM port instead of `/dev/ttyACM0`):
+```powershell
+usbipd detach --busid 2-2
+```
+
+### 3. Watch it live (quick sanity check)
+
+From Windows PowerShell, using the COM port directly:
+```powershell
+Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process -Force
+& "..\host\monitor_com.ps1" -Seconds 30
+```
+Press the STM32's black **NRST** button right after it prints
+`Listening...` to catch a clean boot banner. You should see raw NMEA
+sentences, `[gps] fix=...` summaries, `[capture] sensor=... tick=...
+utc_ns=...` lines once PPS is anchored, and a `[stm32-hub] alive (...)`
+heartbeat roughly every few seconds with `pps_anchor=YES` and all the
+`*_dropped`/`*_errors` counters at `0`.
+
+Add `-Raw` for a hex+ASCII byte dump instead (useful for diagnosing
+framing/signal issues), or `-Seconds N` for a longer/shorter capture.
+
+### 4. Log to CSV with UTC timestamps
+
+`stm32_logger.py` (needs `pip install pyserial`, and `pyyaml` only if using
+`--config`) parses the live stream and writes one CSV row per event:
+```bash
+cd host
+python3 stm32_logger.py --port /dev/ttyACM0 --csv capture_log.csv
+# or on native Windows Python: --port COM10
+```
+Press Ctrl-C to stop (it flushes and closes the CSV cleanly). Runs
+indefinitely, auto-reconnecting if the port drops.
+
+CSV columns:
+
+| Column | Meaning |
+|---|---|
+| `sensor` | `gps_pps`, `radar_sync`, `camera_sync`, or a heartbeat line (`heartbeat:N`) |
+| `sensor_edge_utc` | UTC time (microsecond precision) that sensor's edge actually happened at |
+| `nearest_pps_edge_utc` | UTC time of the whole-second GPS-PPS boundary this edge is measured against |
+| `offset_from_pps_ms` | `sensor_edge_utc` minus `nearest_pps_edge_utc`, in milliseconds (+ = after that edge, - = before the next one) |
+| `precision_source` | `stm32_pps` (real hardware-anchored precision, trust these) or `host_ntp_fallback` (host wall-clock, tens-of-ms jitter -- see the module docstring for why) |
+
+This is the direct "how far was the sensor from the nearest PPS edge"
+answer, already computed per row -- no post-processing needed to read it.
+
+### 5. Compute offset/jitter statistics
+
+```bash
+python3 pps_offset_stats.py capture_log.csv                    # all sensors
+python3 pps_offset_stats.py capture_log.csv --sensor camera_sync  # just one
+```
+Only uses `stm32_pps`-tagged rows (fallback rows are too imprecise to be
+meaningful here). Reports, per sensor:
+- **Offset from nearest PPS edge**: mean/stddev/min/max, in ms/us -- how
+  consistently the sensor's edges land relative to true GPS time. For a
+  sensor with no fixed phase relationship to GPS seconds (e.g. an
+  independent free-running waveform generator), expect this to spread
+  close to uniformly across the full second (theoretical stddev for a
+  uniform &plusmn;500ms spread is `1000/sqrt(12) ~= 288.7ms`).
+- **Inter-event spacing**: mean/stddev/min/max time between consecutive
+  edges of that sensor -- how consistent the sensor's own rate is, and
+  (via the stddev specifically) whether captures look clean or show signs
+  of bounce/noise (a clean signal has 3-4 orders of magnitude tighter
+  stddev than one with bounce artifacts -- see "Input capture bounce
+  filter" above for a worked example).
