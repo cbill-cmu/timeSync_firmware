@@ -12,7 +12,7 @@ trivial to find. Once you see it, re-run with --frame-period 50 for the real
     uv run python syncout_test.py --config victim.yaml
     uv run python syncout_test.py --config victim.yaml --frame-period 50
 """
-import argparse, logging, signal, sys
+import argparse, logging, signal, sys, time
 import yaml
 
 
@@ -56,8 +56,13 @@ def main():
             try: r.stop()
             finally: log.info("stopped -- SYNC_OUT should go flat now.")
         sys.exit(0)
-    signal.signal(signal.SIGINT, sh); signal.signal(signal.SIGTERM, sh)
-    signal.pause()
+    signal.signal(signal.SIGINT, sh)
+    if hasattr(signal, "SIGTERM"):
+        signal.signal(signal.SIGTERM, sh)
+    # signal.pause() is POSIX-only (AttributeError on Windows) -- this loop is
+    # the portable equivalent and still gets interrupted promptly by Ctrl-C.
+    while not stopped["d"]:
+        time.sleep(0.2)
 
 
 if __name__ == "__main__":

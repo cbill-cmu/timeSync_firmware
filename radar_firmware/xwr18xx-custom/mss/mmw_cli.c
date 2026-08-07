@@ -265,25 +265,6 @@ static int32_t MmwDemo_CLISensorStart (int32_t argc, char* argv[])
     gMmwMssMCB.objDetCommonCfg.preStartCommonCfg.numSubFrames =
         MmwDemo_RFParser_getNumSubFrames(&gMmwMssMCB.cfg.ctrlCfg);
 
-    /* DEBUG: ground-truth the raw frame config right before it's applied to
-     * RF hardware, to rule in/out whether the CLI is actually receiving/
-     * storing the frame_period the host sent (vs. a downstream RF-level
-     * fallback/rejection we can't see from the CLI layer alone). Raw units
-     * are 1 LSB = 5ns, so ms = raw * 5 / 1e6. Remove once resolved. */
-    if (gMmwMssMCB.loggingUartHandle != NULL)
-    {
-        char     dbg[96];
-        uint32_t rawPeriod = gMmwMssMCB.cfg.ctrlCfg.u.frameCfg.frameCfg.framePeriodicity;
-        snprintf(dbg, sizeof(dbg),
-                 "sensorStart: framePeriodicity raw=%lu (%lu.%03lu ms) numLoops=%lu chirpEnd=%d\r\n",
-                 (unsigned long)rawPeriod,
-                 (unsigned long)((rawPeriod * 5UL) / 1000000UL),
-                 (unsigned long)(((rawPeriod * 5UL) % 1000000UL) / 1000UL),
-                 (unsigned long)gMmwMssMCB.cfg.ctrlCfg.u.frameCfg.frameCfg.numLoops,
-                 gMmwMssMCB.cfg.ctrlCfg.u.frameCfg.frameCfg.chirpEndIdx);
-        UART_writePolling(gMmwMssMCB.loggingUartHandle, (uint8_t*)dbg, strlen(dbg));
-    }
-
     if ((gMmwMssMCB.sensorState == MmwDemo_SensorState_INIT) ||
         (gMmwMssMCB.sensorState == MmwDemo_SensorState_OPENED))
     {

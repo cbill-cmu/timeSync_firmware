@@ -1,4 +1,7 @@
-/* Platform-specific initialization : firmware version 1.0 LVDS-WORKING*/
+/* Platform-specific hardware init (pinmux, GPIO, HSI clock) for the
+ * AWR1843AOP custom board -- includes the frame-sync GPIO setup that's the
+ * whole reason this file exists as a separate custom module; see
+ * MmwDemo_platformInit below and ../README.md's Hardware Reference section. */
 
 #include <stdint.h>
 #include <string.h>

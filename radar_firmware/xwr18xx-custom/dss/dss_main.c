@@ -111,7 +111,8 @@ static void MmwDemo_DPC_ObjectDetection_dpmTask(UArg arg0, UArg arg1);
  ************************* Millimeter Wave Demo Functions **********************
  **************************************************************************/
 
-/* tianshu: ignored */
+/* DPM requires a report callback to be registered; this build doesn't need
+ * to react to any DPC report type, so it's a no-op. */
 static void MmwDemo_DPC_ObjectDetection_reportFxn
 (
     DPM_Report  reportType,
@@ -149,8 +150,9 @@ static void MmwDemo_DPC_ObjectDetection_dpmTask(UArg arg0, UArg arg1)
         {
             if ((resultBuffer.size[0] == sizeof(DPC_ObjectDetection_ExecuteResult)))
             {
-                /* tianshu: looks like something is waiting on this. */
-                /* tianshu: send a result even though we're not doing anything to get things going. */
+                /* DPM_sendResult must be called even though this build doesn't
+                 * use the result content -- something downstream in the
+                 * DPM/mmwave control flow blocks waiting on it. */
                 DPM_sendResult(gMmwDssMCB.dataPathObj.objDetDpmHandle, true, &resultBuffer);
             }
         }

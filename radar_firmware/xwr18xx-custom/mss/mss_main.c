@@ -165,7 +165,6 @@ void _MmwDemo_debugAssert(int32_t expression, const char *file, int32_t line)
     }
 }
 
-// tianshu: used in mmw_cli to set config values
 /**************************************************************************
  ******************** Millimeter Wave Demo control path Functions *****************
  **************************************************************************/
@@ -517,7 +516,6 @@ exit:
 }
 
 static uint32_t gSyncState = 0;
-static uint32_t gFrameTriggerCount = 0;
 static Clock_Handle gSyncToggleClockHandle = NULL;
 
 /* Periodic toggle for the sync pulse, driven on two pins together:
@@ -544,28 +542,9 @@ static int32_t MmwDemo_eventCallbackFxn(
     {
         /* One-shot "RF armed and running" ack, fired once per sensorStart --
          * not a per-frame heartbeat (confirmed via mmwavelink docs and
-         * empirically: this only ever fires once per start). Kept as a
-         * confirmation that MMWave_start actually succeeded; the real
-         * per-frame pulse now comes from MmwDemo_syncToggleClockFxn's
-         * periodic Clock instead of this event. */
-        if (gMmwMssMCB.loggingUartHandle != NULL)
-        {
-            char dbg[80];
-            /* DEBUG: live readback of ball U7/DP0's pad control register
-             * (PADBF_CFG_REG, offset 0x07C -> 0xFFFFEA7C). This is a static
-             * config register (FUNC_SEL/override bits), set once during
-             * MmwDemo_platformInit and never touched again -- reading it
-             * once here is enough, no need for a per-toggle readback.
-             * Expect low nibble (FUNC_SEL) = 0x1 (GPIO_31). If it's not,
-             * the pinmux write for this pad isn't landing as configured --
-             * if it is, the ~1.72V-instead-of-3.3V issue is downstream of
-             * pinmux (real board-level loading, not a config problem). */
-            volatile uint32_t *dp0PadReg = (volatile uint32_t *)0xFFFFEA7C;
-            snprintf(dbg, sizeof(dbg), "frameTrigger #%lu DP0pad=0x%08lx\r\n",
-                     (unsigned long)gFrameTriggerCount, (unsigned long)*dp0PadReg);
-            UART_writePolling(gMmwMssMCB.loggingUartHandle, (uint8_t*)dbg, strlen(dbg));
-        }
-        gFrameTriggerCount++;
+         * empirically: this only ever fires once per start). Not otherwise
+         * used; the real per-frame sync pulse comes from
+         * MmwDemo_syncToggleClockFxn's periodic Clock instead of this event. */
     }
 
     return 0;

@@ -1,9 +1,10 @@
 # radar_firmware
 
 Custom TI mmWave MSS/DSS firmware for an **AWR1843AOP**-based board, forked
-from TI's mmWave SDK demo to add a hardware frame-sync pulse (see
-[`xwr18xx-custom/mss/mss_main.c`](xwr18xx-custom/mss/mss_main.c)) for
-external timestamp correlation with an MCU. Derived from the TI mmWave demo
+from TI's mmWave SDK demo to add a frame-sync GPIO pulse (software-clock-driven,
+not a hardware trigger -- see [`xwr18xx-custom/mss/mss_main.c`](xwr18xx-custom/mss/mss_main.c)
+and the "Hardware Reference" section below) for external timestamp
+correlation with an MCU. Derived from the TI mmWave demo
 firmware (BSD-3); modifications licensed under similar terms (MIT) -- see
 [`../LICENSE`](../LICENSE) and [`../LICENSE-MODIFICATIONS`](../LICENSE-MODIFICATIONS).
 See the [main `xwr` documentation](https://radarml.github.io/xwr/firmware)
@@ -152,10 +153,44 @@ Driven in `MmwDemo_syncToggleClockFxn` ([`xwr18xx-custom/mss/mss_main.c`](xwr18x
   connector (this board's `J11`). This is the output meant for an external MCU to tap.
 - **`GPIO_2`** (onboard `DS3` LED) -- mirrors the same toggle, for visual confirmation
   without any external wiring.
+- **This is a per-frame pulse, not a per-chirp pulse.** It's driven by a plain
+  RTOS `Clock_create()` software timer set to the configured frame period (see
+  `MmwDemo_startSensor` in `mss_main.c`) -- there is no real hardware chirp or
+  frame-start event backing it (see "Why not a real hardware chirp signal?"
+  below). **`../host/victim.yaml` currently sets `frame_length: 1`** (one
+  chirp per frame), which makes this pulse chirp-accurate *for that config
+  only* -- frame-sync and chirp-sync are the same event when there's exactly
+  one chirp per frame. If `frame_length` is ever raised above 1, this pulse
+  no longer marks individual chirps, only the group; getting true per-chirp
+  timing at that point means either computing each chirp's offset within the
+  frame from the profile's `idle_time`/`ramp_end_time`/`tx_start_time` (the
+  chirps are evenly spaced, so this is deterministic), or hooking the DSS's
+  internal per-chirp ADC interrupt (see below -- untested, and still not a
+  hardware-timed edge).
 - **Voltage: ~1.8V nominal, measured ~1.72V under load.** This is the chip's shared
   `VIOIN` rail -- every digital I/O pin on the chip is on this same rail, so a 3.3V/5V
   MCU input needs a level shifter (e.g. `74LVC1T45`, or a BSS138 shifter) on this line
   regardless of which pin below you use.
+
+### Why not a real hardware chirp signal? (tried, didn't work)
+
+Two real hardware-level attempts were made before settling on the software-clock
+approach above -- kept here so it isn't re-attempted from scratch later:
+
+- **`CHIRP_START`/`FRAME_START` pinmux functions on pin K13 (GPIO_2/DS3).** This
+  chip's pinmux has named alternate functions for these signals, and pointing K13 at
+  them was confirmed -- via pad-register readback -- to land correctly in hardware.
+  But RadarSS never actually drove either signal while chirping; nothing toggled.
+  This matches TI's own statement for the related AWR2243 that there is no real
+  hardware path bringing a chirp-interrupt out to a pin. See
+  `MmwDemo_platformInit` in [`xwr18xx-custom/mss/mmw_platform.c`](xwr18xx-custom/mss/mmw_platform.c).
+- **`SYNC_OUT` on ball M3 (pad `PING13_PADBC`, `GPIO_29`).** Same story: pinmux
+  landed, but nothing ever toggled it while running. Left pinmuxed as a plain GPIO,
+  driven low once at init and otherwise unused.
+
+Given both dead ends, the `Clock_create()` software timer (frame-period only, see
+above) is what's actually driving the pulse on this board today -- not a hardware
+trigger of any kind, chirp- or frame-level.
 
 ### 60-pin HD connector (reference: "J1" on xWR1843BOOST / "J3" on DCA1000EVM; this board: "J11")
 
